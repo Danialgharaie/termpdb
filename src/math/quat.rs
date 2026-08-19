@@ -235,4 +235,3 @@ impl MulAssign for Quat {
         *self = Quat::mul(self, &rhs);
     }
 }
-

@@ -10,6 +10,32 @@ pub struct Vec3 {
 }
 
 impl Vec3 {
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    pub const ONE: Self = Self {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+    pub const X: Self = Self {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    pub const Y: Self = Self {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    };
+    pub const Z: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    };
+
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
@@ -48,11 +74,7 @@ impl Vec3 {
 
     pub fn normalize(&self) -> Self {
         let n = self.norm();
-        if n > 1e-8 {
-            *self / n
-        } else {
-            Self::zero()
-        }
+        if n > 1e-8 { *self / n } else { Self::zero() }
     }
 
     pub fn lerp(&self, other: Self, t: f32) -> Self {

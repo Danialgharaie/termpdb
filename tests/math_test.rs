@@ -1,6 +1,6 @@
+use std::f32::consts::PI;
 use termpdb::error::{Result, TermPdbError};
 use termpdb::math::{CatmullRomSpline, Mat4, Quat, Vec3};
-use std::f32::consts::PI;
 
 const EPSILON: f32 = 1e-4;
 
@@ -75,7 +75,10 @@ fn test_vec3_dot_and_cross() {
     // Dot products
     assert_eq!(x.dot(y), 0.0);
     assert_eq!(x.dot(x), 1.0);
-    assert_eq!(Vec3::new(1.0, 2.0, 3.0).dot(Vec3::new(4.0, -5.0, 6.0)), 12.0);
+    assert_eq!(
+        Vec3::new(1.0, 2.0, 3.0).dot(Vec3::new(4.0, -5.0, 6.0)),
+        12.0
+    );
 
     // Cross products (Right hand rule)
     assert_eq!(x.cross(y), z);
@@ -313,7 +316,10 @@ fn test_spline_interpolation_and_continuity() {
     let samples = spline.generate_smooth_curve(10);
     assert!(!samples.is_empty());
     assert!(vec3_approx_eq(samples[0], points[0]));
-    assert!(vec3_approx_eq(*samples.last().unwrap(), *points.last().unwrap()));
+    assert!(vec3_approx_eq(
+        *samples.last().unwrap(),
+        *points.last().unwrap()
+    ));
 }
 
 #[test]
