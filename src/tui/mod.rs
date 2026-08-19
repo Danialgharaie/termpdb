@@ -49,6 +49,7 @@ pub fn run(
     initial_mode: RenderMode,
     initial_color: ColorScheme,
     auto_spin: bool,
+    spin_speed: f32,
 ) -> Result<()> {
     // Set panic hook to ensure terminal is cleaned up even if a panic occurs
     let original_hook = panic::take_hook();
@@ -72,7 +73,8 @@ pub fn run(
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let mut app = App::new(structure, initial_mode, initial_color, auto_spin);
+    let mut app =
+        App::new(structure, initial_mode, initial_color, auto_spin).with_spin_speed(spin_speed);
     let mut last_frame_time = Instant::now();
     let frame_target = Duration::from_micros(16_667); // ~60 FPS
 

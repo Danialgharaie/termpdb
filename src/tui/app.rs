@@ -93,6 +93,17 @@ impl App {
         }
     }
 
+    /// Sets the spin speed factor using builder pattern.
+    pub fn with_spin_speed(mut self, speed: f32) -> Self {
+        self.spin_speed = speed;
+        self
+    }
+
+    /// Sets the spin speed factor.
+    pub fn set_spin_speed(&mut self, speed: f32) {
+        self.spin_speed = speed;
+    }
+
     /// Dispatches an `AppAction` to update app state or camera.
     pub fn apply_action(&mut self, action: AppAction) {
         match action {

@@ -205,6 +205,15 @@ fn test_app_spin_toggles_and_speed() {
     assert!(app.spin_speed > initial_speed);
     app.decrease_spin_speed();
     assert_eq!(app.spin_speed, initial_speed);
+
+    // Test with_spin_speed and set_spin_speed
+    let app2 = App::new(create_test_structure(), RenderMode::Ribbon, ColorScheme::Cpk, true)
+        .with_spin_speed(3.5);
+    assert_eq!(app2.spin_speed, 3.5);
+
+    let mut app3 = App::new(create_test_structure(), RenderMode::Ribbon, ColorScheme::Cpk, true);
+    app3.set_spin_speed(2.0);
+    assert_eq!(app3.spin_speed, 2.0);
 }
 
 #[test]

@@ -210,7 +210,12 @@ fn test_export_ansi_file_roundtrip() {
     let structure = parse_pdb(SAMPLE_PDB_1CRN).expect("Failed to parse PDB");
     let ansi = export_ansi(&structure, RenderMode::Ribbon, ColorScheme::Rainbow, 40, 20);
 
-    let tmp_path = std::env::temp_dir().join("termpdb_test_export.ansi");
+    let pid = std::process::id();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp_path = std::env::temp_dir().join(format!("termpdb_test_export_{}_{}.ansi", pid, timestamp));
     std::fs::write(&tmp_path, &ansi).expect("Failed to write temporary file");
     let read_back = std::fs::read_to_string(&tmp_path).expect("Failed to read temporary file");
     let _ = std::fs::remove_file(&tmp_path);

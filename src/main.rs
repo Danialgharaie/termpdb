@@ -43,7 +43,7 @@ fn main() {
         return;
     }
 
-    if let Err(err) = tui::run(structure, cli.mode, cli.color, cli.spin) {
+    if let Err(err) = tui::run(structure, cli.mode, cli.color, cli.spin, cli.spin_speed) {
         eprintln!("Error running termpdb: {}", err);
         std::process::exit(1);
     }
