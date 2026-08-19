@@ -7,20 +7,26 @@ use crate::model::{Atom, Residue, SecondaryStructure, Structure};
 use crate::render::buffer::PixelColor;
 
 /// Available color schemes for molecular visualization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, clap::ValueEnum)]
 pub enum ColorScheme {
     /// Element-based CPK coloring (Carbon grey, Oxygen red, Nitrogen blue, etc.)
     #[default]
+    #[value(name = "cpk")]
     Cpk,
     /// N-to-C terminal rainbow gradient (Blue -> Green -> Yellow -> Red)
+    #[value(name = "rainbow")]
     Rainbow,
     /// Unique color per polymer chain
+    #[value(name = "chain")]
     Chain,
     /// Color by secondary structure (Helix magenta, Sheet yellow, Coil cyan/grey)
+    #[value(name = "secondary-structure", alias = "ss")]
     SecondaryStructure,
     /// Temperature factor (B-factor / pLDDT) heatmap
+    #[value(name = "bfactor", alias = "b-factor")]
     BFactor,
     /// Kyte-Doolittle hydrophobicity scale (Hydrophobic orange, Hydrophilic blue)
+    #[value(name = "hydrophobicity")]
     Hydrophobicity,
 }
 

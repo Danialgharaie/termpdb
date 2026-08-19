@@ -25,16 +25,20 @@ use crate::render::color::ColorScheme;
 use crate::render::lighting::Lighting;
 
 /// Available molecular representation rendering modes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, clap::ValueEnum)]
 pub enum RenderMode {
     /// Backbone CA / Nucleic phosphorus trace
+    #[value(name = "trace")]
     Trace,
     /// All-atom ball and stick
+    #[value(name = "ball-and-stick", alias = "ball_and_stick")]
     BallAndStick,
     /// Secondary structure cartoon ribbon
     #[default]
+    #[value(name = "ribbon")]
     Ribbon,
     /// Space-filling Van der Waals spheres
+    #[value(name = "vdw")]
     Vdw,
 }
 

@@ -126,4 +126,31 @@ impl Framebuffer {
     pub fn terminal_size(&self) -> (usize, usize) {
         (self.width, self.height.div_ceil(2))
     }
+
+    /// Converts the framebuffer contents to a standalone ANSI truecolor string.
+    pub fn to_ansi(&self) -> String {
+        let term_rows = self.height.div_ceil(2);
+        if self.width == 0 || term_rows == 0 {
+            return String::new();
+        }
+
+        use std::fmt::Write;
+        let mut out = String::with_capacity(term_rows * self.width * 35);
+
+        for r in 0..term_rows {
+            for c in 0..self.width {
+                let (ch, fg, bg) = self.cell_at(c, r);
+                let _ = write!(out, "\x1b[38;2;{};{};{}m", fg.0, fg.1, fg.2);
+                if let Some(bg) = bg {
+                    let _ = write!(out, "\x1b[48;2;{};{};{}m", bg.0, bg.1, bg.2);
+                } else {
+                    out.push_str("\x1b[49m");
+                }
+                out.push(ch);
+            }
+            out.push_str("\x1b[0m\n");
+        }
+
+        out
+    }
 }
