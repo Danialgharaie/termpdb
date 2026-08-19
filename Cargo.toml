@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+clap = { version = "4.5", features = ["derive"] }
+ureq = "2.12"
+flate2 = "1.0"
+anyhow = "1.0"
+thiserror = "2.0"
+
