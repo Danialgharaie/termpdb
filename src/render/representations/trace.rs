@@ -3,9 +3,9 @@
 //! Connects sequential C-alpha (CA) and nucleic acid phosphorus (P) backbone guide atoms
 //! with smooth 3D cylinders, and renders heteroatom ligands/cofactors as analytical spheres.
 
+use crate::model::Structure;
 use crate::model::atom::Atom;
 use crate::model::residue::Residue;
-use crate::model::Structure;
 use crate::render::buffer::Framebuffer;
 use crate::render::camera::Camera;
 use crate::render::color::{ColorScheme, color_for_atom};
@@ -85,11 +85,7 @@ pub fn render_trace(
                 if c1 == c2 {
                     draw_cylinder(buffer, p1, p2, cyl_r, c1, lighting);
                 } else {
-                    let pmid = (
-                        (p1.0 + p2.0) * 0.5,
-                        (p1.1 + p2.1) * 0.5,
-                        avg_depth,
-                    );
+                    let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
                     draw_cylinder(buffer, p1, pmid, cyl_r, c1, lighting);
                     draw_cylinder(buffer, pmid, p2, cyl_r, c2, lighting);
                 }
@@ -142,11 +138,7 @@ pub fn render_trace(
                     if c1 == c2 {
                         draw_cylinder(buffer, p1, p2, cyl_r, c1, lighting);
                     } else {
-                        let pmid = (
-                            (p1.0 + p2.0) * 0.5,
-                            (p1.1 + p2.1) * 0.5,
-                            avg_depth,
-                        );
+                        let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
                         draw_cylinder(buffer, p1, pmid, cyl_r, c1, lighting);
                         draw_cylinder(buffer, pmid, p2, cyl_r, c2, lighting);
                     }

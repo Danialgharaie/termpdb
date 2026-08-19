@@ -59,71 +59,146 @@ impl Widget for HelpWidget {
         block.render(modal_area, buf);
 
         let lines = vec![
+            Line::from(vec![Span::styled(
+                "  Representation Modes:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(vec![
-                Span::styled("  Representation Modes:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(vec![
-                Span::styled("    1 / 2 / 3 / 4", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    1 / 2 / 3 / 4",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Trace / Ball & Stick / Ribbon / VDW"),
             ]),
             Line::from(vec![
-                Span::styled("    m / M        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    m / M        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Next / Previous Representation"),
             ]),
             Line::from(""),
+            Line::from(vec![Span::styled(
+                "  Color Schemes:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(vec![
-                Span::styled("  Color Schemes:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(vec![
-                Span::styled("    c / C        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    c / C        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Next / Prev Color (CPK, Rainbow, Chain, SS, B-Factor, Hydro)"),
             ]),
             Line::from(""),
+            Line::from(vec![Span::styled(
+                "  Animation & View:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(vec![
-                Span::styled("  Animation & View:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(vec![
-                Span::styled("    Space        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    Space        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Toggle Auto-Spin"),
             ]),
             Line::from(vec![
-                Span::styled("    + / - (= / _)", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    + / - (= / _)",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Increase / Decrease Spin Speed"),
             ]),
             Line::from(vec![
-                Span::styled("    r            ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    r            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Reset Camera View & Zoom"),
             ]),
             Line::from(""),
+            Line::from(vec![Span::styled(
+                "  Camera Controls:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(vec![
-                Span::styled("  Camera Controls:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(vec![
-                Span::styled("    Left Click + Drag / Arrows ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    Left Click + Drag / Arrows ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" Orbit / Rotate 3D camera"),
             ]),
             Line::from(vec![
-                Span::styled("    Right Click + Drag / WASD  ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    Right Click + Drag / WASD  ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" Pan camera target"),
             ]),
             Line::from(vec![
-                Span::styled("    Scroll Wheel / [ / ]       ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    Scroll Wheel / [ / ]       ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(" Zoom In / Out"),
             ]),
             Line::from(""),
+            Line::from(vec![Span::styled(
+                "  General:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from(vec![
-                Span::styled("  General:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(vec![
-                Span::styled("    i            ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    i            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Toggle Structure Details / Info"),
             ]),
             Line::from(vec![
-                Span::styled("    ? / h        ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    ? / h        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Toggle this Help modal"),
             ]),
             Line::from(vec![
-                Span::styled("    q / Esc      ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "    q / Esc      ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::raw("    Quit application"),
             ]),
         ];

@@ -27,11 +27,7 @@ impl Widget for HeaderWidget<'_> {
             return;
         }
 
-        let id_str = self
-            .structure
-            .id_code
-            .as_deref()
-            .unwrap_or("termpdb");
+        let id_str = self.structure.id_code.as_deref().unwrap_or("termpdb");
         let title_str = if self.structure.title.is_empty() {
             "Macromolecule"
         } else {
@@ -93,12 +89,7 @@ pub struct FooterWidget {
 
 impl FooterWidget {
     /// Creates a new `FooterWidget` with rendering state and FPS.
-    pub fn new(
-        mode: RenderMode,
-        color_scheme: ColorScheme,
-        auto_spin: bool,
-        fps: f32,
-    ) -> Self {
+    pub fn new(mode: RenderMode, color_scheme: ColorScheme, auto_spin: bool, fps: f32) -> Self {
         Self {
             mode,
             color_scheme,
@@ -135,9 +126,7 @@ impl Widget for FooterWidget {
             Span::styled(" [Space] ", Style::default().fg(Color::Yellow)),
             Span::styled(
                 format!("Spin: {spin_status} "),
-                Style::default()
-                    .fg(spin_color)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(spin_color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(" [?] ", Style::default().fg(Color::Yellow)),
             Span::styled("Help ", Style::default().fg(Color::White)),

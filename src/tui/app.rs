@@ -3,19 +3,13 @@
 use std::time::Instant;
 
 use crossterm::event::{KeyEvent, MouseEvent};
-use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Frame;
+use ratatui::layout::{Constraint, Direction, Layout};
 
 use crate::model::Structure;
-use crate::render::{
-    render_structure, Camera, ColorScheme, Framebuffer, Lighting, RenderMode,
-};
-use crate::tui::events::{
-    handle_key_event, handle_mouse_event, AppAction, MouseState,
-};
-use crate::tui::widgets::{
-    FooterWidget, HeaderWidget, HelpWidget, InfoWidget, ViewportWidget,
-};
+use crate::render::{Camera, ColorScheme, Framebuffer, Lighting, RenderMode, render_structure};
+use crate::tui::events::{AppAction, MouseState, handle_key_event, handle_mouse_event};
+use crate::tui::widgets::{FooterWidget, HeaderWidget, HelpWidget, InfoWidget, ViewportWidget};
 
 /// Main application state for the interactive 3D terminal molecular viewer.
 pub struct App {

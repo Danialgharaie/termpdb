@@ -1,7 +1,7 @@
 //! TermPDB binary entry point.
 
-use std::io::Write;
 use clap::Parser;
+use std::io::Write;
 use termpdb::cli::Cli;
 use termpdb::parser::load_structure;
 use termpdb::render::export_ansi;
@@ -14,7 +14,9 @@ fn main() {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => {
             eprintln!("Error: No structure source provided.");
-            eprintln!("Usage: termpdb <SOURCE> [-m <MODE>] [-c <COLOR>] [-s] [--export-ansi <PATH>]");
+            eprintln!(
+                "Usage: termpdb <SOURCE> [-m <MODE>] [-c <COLOR>] [-s] [--export-ansi <PATH>]"
+            );
             eprintln!("Try `termpdb --help` for more information.");
             std::process::exit(1);
         }

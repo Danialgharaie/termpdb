@@ -62,11 +62,7 @@ pub fn render_ball_stick(
                 if c1 == c2 {
                     draw_cylinder(buffer, p1, p2, bond_r, c1, lighting);
                 } else {
-                    let pmid = (
-                        (p1.0 + p2.0) * 0.5,
-                        (p1.1 + p2.1) * 0.5,
-                        avg_depth,
-                    );
+                    let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
                     draw_cylinder(buffer, p1, pmid, bond_r, c1, lighting);
                     draw_cylinder(buffer, pmid, p2, bond_r, c2, lighting);
                 }

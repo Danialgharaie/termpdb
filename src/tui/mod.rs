@@ -15,10 +15,10 @@ use crossterm::cursor::Show;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 
 pub use app::App;
 pub use events::{AppAction, MouseState};
@@ -34,12 +34,7 @@ struct TerminalCleanupGuard;
 impl Drop for TerminalCleanupGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(
-            stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            Show
-        );
+        let _ = execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture, Show);
     }
 }
 
@@ -55,12 +50,7 @@ pub fn run(
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
         let _ = disable_raw_mode();
-        let _ = execute!(
-            stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            Show
-        );
+        let _ = execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture, Show);
         original_hook(panic_info);
     }));
 

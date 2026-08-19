@@ -84,13 +84,30 @@ fn test_pdb_parsing_to_ansi_export_all_modes() {
 
     for &mode in RenderMode::all() {
         let ansi = export_ansi(&structure, mode, ColorScheme::Rainbow, 80, 40);
-        assert!(!ansi.is_empty(), "Exported ANSI for mode {:?} should not be empty", mode);
-        assert!(ansi.contains('▀'), "ANSI output should contain upper half-block character ▀");
-        assert!(ansi.contains("\x1b[38;2;"), "ANSI output should contain truecolor foreground escapes");
-        assert!(ansi.contains("\x1b[0m"), "ANSI output should contain reset escapes");
+        assert!(
+            !ansi.is_empty(),
+            "Exported ANSI for mode {:?} should not be empty",
+            mode
+        );
+        assert!(
+            ansi.contains('▀'),
+            "ANSI output should contain upper half-block character ▀"
+        );
+        assert!(
+            ansi.contains("\x1b[38;2;"),
+            "ANSI output should contain truecolor foreground escapes"
+        );
+        assert!(
+            ansi.contains("\x1b[0m"),
+            "ANSI output should contain reset escapes"
+        );
 
         let lines: Vec<&str> = ansi.lines().collect();
-        assert_eq!(lines.len(), 40, "ANSI output line count should match requested height 40");
+        assert_eq!(
+            lines.len(),
+            40,
+            "ANSI output line count should match requested height 40"
+        );
     }
 }
 
@@ -99,14 +116,24 @@ fn test_cif_parsing_to_ribbon_ansi_export() {
     let mut structure = parse_cif(SAMPLE_CIF_1CRN).expect("Failed to parse CIF");
     structure.build_bonds();
 
-    let ansi = export_ansi(&structure, RenderMode::Ribbon, ColorScheme::SecondaryStructure, 60, 30);
+    let ansi = export_ansi(
+        &structure,
+        RenderMode::Ribbon,
+        ColorScheme::SecondaryStructure,
+        60,
+        30,
+    );
     assert!(!ansi.is_empty());
     assert!(ansi.contains('▀'));
     assert!(ansi.contains("\x1b[38;2;"));
     assert!(ansi.contains("\x1b[0m"));
 
     let lines: Vec<&str> = ansi.lines().collect();
-    assert_eq!(lines.len(), 30, "ANSI output line count should match requested height 30");
+    assert_eq!(
+        lines.len(),
+        30,
+        "ANSI output line count should match requested height 30"
+    );
 }
 
 #[test]
@@ -116,7 +143,11 @@ fn test_all_color_schemes_ansi_export() {
 
     for &scheme in ColorScheme::all() {
         let ansi = export_ansi(&structure, RenderMode::Ribbon, scheme, 80, 40);
-        assert!(!ansi.is_empty(), "Exported ANSI for scheme {:?} should not be empty", scheme);
+        assert!(
+            !ansi.is_empty(),
+            "Exported ANSI for scheme {:?} should not be empty",
+            scheme
+        );
         assert!(ansi.contains('▀'));
         assert!(ansi.contains("\x1b[38;2;"));
     }
@@ -194,15 +225,22 @@ fn test_cli_argument_parsing_flags_and_aliases() {
 
 #[test]
 fn test_cli_no_arguments() {
-    let cli = Cli::try_parse_from(["termpdb"]).expect("CLI parsing without arguments should succeed with None source");
+    let cli = Cli::try_parse_from(["termpdb"])
+        .expect("CLI parsing without arguments should succeed with None source");
     assert_eq!(cli.source, None);
 }
 
 #[test]
 fn test_export_ansi_zero_dimensions() {
     let structure = parse_pdb(SAMPLE_PDB_1CRN).expect("Failed to parse PDB");
-    assert_eq!(export_ansi(&structure, RenderMode::Ribbon, ColorScheme::Rainbow, 0, 40), "");
-    assert_eq!(export_ansi(&structure, RenderMode::Ribbon, ColorScheme::Rainbow, 80, 0), "");
+    assert_eq!(
+        export_ansi(&structure, RenderMode::Ribbon, ColorScheme::Rainbow, 0, 40),
+        ""
+    );
+    assert_eq!(
+        export_ansi(&structure, RenderMode::Ribbon, ColorScheme::Rainbow, 80, 0),
+        ""
+    );
 }
 
 #[test]
@@ -215,7 +253,8 @@ fn test_export_ansi_file_roundtrip() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let tmp_path = std::env::temp_dir().join(format!("termpdb_test_export_{}_{}.ansi", pid, timestamp));
+    let tmp_path =
+        std::env::temp_dir().join(format!("termpdb_test_export_{}_{}.ansi", pid, timestamp));
     std::fs::write(&tmp_path, &ansi).expect("Failed to write temporary file");
     let read_back = std::fs::read_to_string(&tmp_path).expect("Failed to read temporary file");
     let _ = std::fs::remove_file(&tmp_path);

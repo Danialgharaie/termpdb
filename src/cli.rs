@@ -1,7 +1,7 @@
 //! Command-line argument parsing for TermPDB.
 
-use clap::Parser;
 use crate::render::{ColorScheme, RenderMode};
+use clap::Parser;
 
 /// 3D Molecular Structure Viewer in your Terminal
 #[derive(Parser, Debug, Clone, PartialEq)]

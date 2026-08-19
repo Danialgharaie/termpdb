@@ -1,19 +1,17 @@
-use ratatui::backend::TestBackend;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::Terminal;
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
 };
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use termpdb::math::Vec3;
 use termpdb::model::{Atom, Chain, Element, Residue, SecondaryStructure, Structure};
 use termpdb::render::{ColorScheme, Framebuffer, RenderMode};
 use termpdb::tui::app::App;
-use termpdb::tui::events::{handle_key_event, handle_mouse_event, AppAction, MouseState};
-use termpdb::tui::widgets::{
-    FooterWidget, HeaderWidget, HelpWidget, InfoWidget, ViewportWidget,
-};
+use termpdb::tui::events::{AppAction, MouseState, handle_key_event, handle_mouse_event};
+use termpdb::tui::widgets::{FooterWidget, HeaderWidget, HelpWidget, InfoWidget, ViewportWidget};
 
 fn create_test_structure() -> Structure {
     let mut structure = Structure::with_id("1CRN", "WATER PENTAPEPTIDE");
@@ -141,7 +139,12 @@ fn create_test_structure() -> Structure {
 #[test]
 fn test_app_initialization() {
     let structure = create_test_structure();
-    let app = App::new(structure.clone(), RenderMode::Ribbon, ColorScheme::Cpk, true);
+    let app = App::new(
+        structure.clone(),
+        RenderMode::Ribbon,
+        ColorScheme::Cpk,
+        true,
+    );
 
     assert_eq!(app.render_mode, RenderMode::Ribbon);
     assert_eq!(app.color_scheme, ColorScheme::Cpk);
@@ -207,11 +210,21 @@ fn test_app_spin_toggles_and_speed() {
     assert_eq!(app.spin_speed, initial_speed);
 
     // Test with_spin_speed and set_spin_speed
-    let app2 = App::new(create_test_structure(), RenderMode::Ribbon, ColorScheme::Cpk, true)
-        .with_spin_speed(3.5);
+    let app2 = App::new(
+        create_test_structure(),
+        RenderMode::Ribbon,
+        ColorScheme::Cpk,
+        true,
+    )
+    .with_spin_speed(3.5);
     assert_eq!(app2.spin_speed, 3.5);
 
-    let mut app3 = App::new(create_test_structure(), RenderMode::Ribbon, ColorScheme::Cpk, true);
+    let mut app3 = App::new(
+        create_test_structure(),
+        RenderMode::Ribbon,
+        ColorScheme::Cpk,
+        true,
+    );
     app3.set_spin_speed(2.0);
     assert_eq!(app3.spin_speed, 2.0);
 }
@@ -424,9 +437,7 @@ fn test_hud_header_widget_render() {
     ratatui::widgets::Widget::render(widget, area, &mut buffer);
 
     // Header should contain structure title or ID
-    let text: String = (0..80)
-        .map(|x| buffer[(x, 0)].symbol())
-        .collect();
+    let text: String = (0..80).map(|x| buffer[(x, 0)].symbol()).collect();
     assert!(text.contains("1CRN") || text.contains("WATER PENTAPEPTIDE"));
 }
 
@@ -438,9 +449,7 @@ fn test_hud_footer_widget_render() {
     let widget = FooterWidget::new(RenderMode::Ribbon, ColorScheme::Cpk, true, 60.0);
     ratatui::widgets::Widget::render(widget, area, &mut buffer);
 
-    let text: String = (0..80)
-        .map(|x| buffer[(x, 0)].symbol())
-        .collect();
+    let text: String = (0..80).map(|x| buffer[(x, 0)].symbol()).collect();
     assert!(text.contains("Ribbon"));
     assert!(text.contains("CPK"));
     assert!(text.contains("ON") || text.contains("Spin"));

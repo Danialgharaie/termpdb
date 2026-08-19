@@ -1,11 +1,7 @@
 use termpdb::math::Vec3;
-use termpdb::model::{
-    Atom, Chain, Residue, SecondaryStructure, Structure, element_by_symbol,
-};
+use termpdb::model::{Atom, Chain, Residue, SecondaryStructure, Structure, element_by_symbol};
 use termpdb::parser::parse_pdb;
-use termpdb::render::{
-    Camera, ColorScheme, Framebuffer, Lighting, RenderMode, render_structure,
-};
+use termpdb::render::{Camera, ColorScheme, Framebuffer, Lighting, RenderMode, render_structure};
 
 fn create_synthetic_protein() -> Structure {
     let mut structure = Structure::new("Synthetic Multi-Domain Protein");
@@ -45,7 +41,11 @@ fn create_synthetic_protein() -> Structure {
         } else {
             // Coil curve
             let t = (res_idx - 10) as f32;
-            Vec3::new(t * 2.0, 18.0 + (t * 0.8).sin() * 3.0, 7.5 + (t * 0.8).cos() * 3.0)
+            Vec3::new(
+                t * 2.0,
+                18.0 + (t * 0.8).sin() * 3.0,
+                7.5 + (t * 0.8).cos() * 3.0,
+            )
         };
 
         let n_pos = ca_pos + Vec3::new(-0.8, -0.6, 0.4);
@@ -138,11 +138,7 @@ fn create_synthetic_protein() -> Structure {
 }
 
 fn count_drawn_pixels(buffer: &Framebuffer, bg: (u8, u8, u8)) -> usize {
-    buffer
-        .pixels
-        .iter()
-        .filter(|&&p| p != bg)
-        .count()
+    buffer.pixels.iter().filter(|&&p| p != bg).count()
 }
 
 #[test]
@@ -212,7 +208,11 @@ fn test_render_trace_mode() {
     );
 
     let drawn = count_drawn_pixels(&buffer, bg);
-    assert!(drawn > 50, "Trace mode should render backbone lines and ligand atoms, drawn={}", drawn);
+    assert!(
+        drawn > 50,
+        "Trace mode should render backbone lines and ligand atoms, drawn={}",
+        drawn
+    );
 }
 
 #[test]
@@ -238,7 +238,11 @@ fn test_render_ball_and_stick_mode() {
     );
 
     let drawn = count_drawn_pixels(&buffer, bg);
-    assert!(drawn > 100, "Ball & Stick mode should render atoms and bonds, drawn={}", drawn);
+    assert!(
+        drawn > 100,
+        "Ball & Stick mode should render atoms and bonds, drawn={}",
+        drawn
+    );
 }
 
 #[test]
@@ -264,7 +268,11 @@ fn test_render_ribbon_mode() {
     );
 
     let drawn = count_drawn_pixels(&buffer, bg);
-    assert!(drawn > 100, "Ribbon mode should render cartoon ribbons and ligand atoms, drawn={}", drawn);
+    assert!(
+        drawn > 100,
+        "Ribbon mode should render cartoon ribbons and ligand atoms, drawn={}",
+        drawn
+    );
 }
 
 #[test]
@@ -303,7 +311,11 @@ fn test_render_vdw_mode() {
     let drawn_vdw = count_drawn_pixels(&buffer_vdw, bg);
     let drawn_bas = count_drawn_pixels(&buffer_bas, bg);
 
-    assert!(drawn_vdw > 100, "VDW mode should render full space-filling spheres, drawn={}", drawn_vdw);
+    assert!(
+        drawn_vdw > 100,
+        "VDW mode should render full space-filling spheres, drawn={}",
+        drawn_vdw
+    );
     // VDW spheres have much larger radius than ball-and-stick spheres
     assert!(
         drawn_vdw > drawn_bas,
@@ -329,14 +341,7 @@ fn test_render_all_modes_and_all_color_schemes() {
             let mut buffer = Framebuffer::new(60, 36);
             buffer.clear(bg);
 
-            render_structure(
-                &structure,
-                mode,
-                scheme,
-                &camera,
-                &mut buffer,
-                &lighting,
-            );
+            render_structure(&structure, mode, scheme, &camera, &mut buffer, &lighting);
 
             let drawn = count_drawn_pixels(&buffer, bg);
             assert!(

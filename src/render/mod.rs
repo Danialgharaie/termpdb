@@ -44,6 +44,13 @@ pub fn export_ansi(
     camera.fit_structure(com, radius);
     let lighting = Lighting::default();
 
-    render_structure(structure, mode, color_scheme, &camera, &mut buffer, &lighting);
+    render_structure(
+        structure,
+        mode,
+        color_scheme,
+        &camera,
+        &mut buffer,
+        &lighting,
+    );
     buffer.to_ansi()
 }

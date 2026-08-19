@@ -6,11 +6,11 @@
 //! - **Random Coil / Loop**: Smooth thin tube ($R \approx 0.3\text{ \AA}$).
 //! - **Heteroatoms / Ligands**: Rendered in Ball & Stick style.
 
-use crate::math::spline::CatmullRomSpline;
 use crate::math::Vec3;
+use crate::math::spline::CatmullRomSpline;
+use crate::model::Structure;
 use crate::model::atom::Atom;
 use crate::model::residue::{Residue, SecondaryStructure};
-use crate::model::Structure;
 use crate::render::buffer::Framebuffer;
 use crate::render::camera::Camera;
 use crate::render::color::{ColorScheme, color_for_atom};
@@ -194,11 +194,7 @@ pub fn render_ribbon(
                     if c1 == c2 {
                         draw_cylinder(buffer, p1, p2, cyl_r, c1, lighting);
                     } else {
-                        let pmid = (
-                            (p1.0 + p2.0) * 0.5,
-                            (p1.1 + p2.1) * 0.5,
-                            avg_depth,
-                        );
+                        let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
                         draw_cylinder(buffer, p1, pmid, cyl_r, c1, lighting);
                         draw_cylinder(buffer, pmid, p2, cyl_r, c2, lighting);
                     }
@@ -248,8 +244,16 @@ fn render_ribbon_segment(
 
         let p1 = points[seg];
         let p2 = points[seg + 1];
-        let p0 = if seg > 0 { points[seg - 1] } else { p1 * 2.0 - p2 };
-        let p3 = if seg + 2 < n { points[seg + 2] } else { p2 * 2.0 - p1 };
+        let p0 = if seg > 0 {
+            points[seg - 1]
+        } else {
+            p1 * 2.0 - p2
+        };
+        let p3 = if seg + 2 < n {
+            points[seg + 2]
+        } else {
+            p2 * 2.0 - p1
+        };
 
         let is_strand_c_term = g1.ss == SecondaryStructure::Sheet
             && (seg + 2 >= n || guides[seg + 2].ss != SecondaryStructure::Sheet);
@@ -335,9 +339,7 @@ fn render_ribbon_segment(
                     let s1_l = camera.world_to_screen(v1_l, buffer.width, buffer.height);
                     let s1_r = camera.world_to_screen(v1_r, buffer.width, buffer.height);
 
-                    if let (Some(sl0), Some(sr0), Some(sl1), Some(sr1)) =
-                        (s0_l, s0_r, s1_l, s1_r)
-                    {
+                    if let (Some(sl0), Some(sr0), Some(sl1), Some(sr1)) = (s0_l, s0_r, s1_l, s1_r) {
                         let n_avg = (ribbon_norm0 + ribbon_norm1).normalize();
 
                         // Top face

@@ -72,57 +72,138 @@ impl Widget for InfoWidget<'_> {
 
         let (min_b, max_b) = self.structure.b_factor_range();
         let hetatm_count = self.structure.atoms.iter().filter(|a| a.is_hetatm).count();
-        let heavy_atom_count = self.structure.atoms.iter().filter(|a| !a.is_hydrogen()).count();
+        let heavy_atom_count = self
+            .structure
+            .atoms
+            .iter()
+            .filter(|a| !a.is_hydrogen())
+            .count();
 
         let mut lines = vec![
             Line::from(vec![
-                Span::styled("  PDB ID: ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                Span::styled(id_code, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  PDB ID: ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    id_code,
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(vec![
-                Span::styled("  Title:  ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Title:  ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(title, Style::default().fg(Color::White)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Chains (", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{}", self.structure.chain_count()), Style::default().fg(Color::White)),
-                Span::styled("): ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Chains (",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{}", self.structure.chain_count()),
+                    Style::default().fg(Color::White),
+                ),
+                Span::styled(
+                    "): ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(chain_str, Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
-                Span::styled("  Total Residues: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{}", self.structure.residue_count()), Style::default().fg(Color::White)),
+                Span::styled(
+                    "  Total Residues: ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{}", self.structure.residue_count()),
+                    Style::default().fg(Color::White),
+                ),
             ]),
             Line::from(vec![
-                Span::styled("  Secondary Structure: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{helix_count} Helix, {sheet_count} Sheet, {coil_count} Coil"), Style::default().fg(Color::White)),
+                Span::styled(
+                    "  Secondary Structure: ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{helix_count} Helix, {sheet_count} Sheet, {coil_count} Coil"),
+                    Style::default().fg(Color::White),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  Total Atoms:       ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{}", self.structure.atom_count()), Style::default().fg(Color::White)),
+                Span::styled(
+                    "  Total Atoms:       ",
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{}", self.structure.atom_count()),
+                    Style::default().fg(Color::White),
+                ),
             ]),
             Line::from(vec![
-                Span::styled("  Heavy Atoms:       ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{heavy_atom_count}"), Style::default().fg(Color::White)),
+                Span::styled(
+                    "  Heavy Atoms:       ",
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{heavy_atom_count}"),
+                    Style::default().fg(Color::White),
+                ),
             ]),
             Line::from(vec![
-                Span::styled("  Heteroatoms/Water: ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "  Heteroatoms/Water: ",
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(format!("{hetatm_count}"), Style::default().fg(Color::White)),
             ]),
             Line::from(vec![
-                Span::styled("  B-Factor Range:    ", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{min_b:.2} .. {max_b:.2} Å²"), Style::default().fg(Color::White)),
+                Span::styled(
+                    "  B-Factor Range:    ",
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("{min_b:.2} .. {max_b:.2} Å²"),
+                    Style::default().fg(Color::White),
+                ),
             ]),
         ];
 
         // Metadata additions
         if !self.structure.metadata.is_empty() {
             lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("  Metadata:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "  Metadata:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]));
             for (k, v) in &self.structure.metadata {
                 lines.push(Line::from(vec![
                     Span::styled(format!("    {k}: "), Style::default().fg(Color::DarkGray)),

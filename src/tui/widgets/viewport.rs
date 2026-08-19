@@ -26,7 +26,11 @@ impl Widget for ViewportWidget<'_> {
         }
 
         let term_cols = self.framebuffer.width.min(area.width as usize);
-        let term_rows = self.framebuffer.height.div_ceil(2).min(area.height as usize);
+        let term_rows = self
+            .framebuffer
+            .height
+            .div_ceil(2)
+            .min(area.height as usize);
 
         for r in 0..term_rows {
             let y = area.y + r as u16;
