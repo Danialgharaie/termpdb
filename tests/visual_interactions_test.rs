@@ -1,6 +1,6 @@
 use termpdb::math::Vec3;
-use termpdb::model::{element_by_symbol, Atom, Chain, Residue, Structure};
-use termpdb::model::interactions::{detect_interactions, InteractionKind};
+use termpdb::model::interactions::{InteractionKind, detect_interactions};
+use termpdb::model::{Atom, Chain, Residue, Structure, element_by_symbol};
 
 #[test]
 fn test_disulfide_bond_detection() {

@@ -6,8 +6,8 @@
 use crate::model::atom::Atom;
 use crate::model::residue::Residue;
 use crate::render::buffer::Framebuffer;
-use crate::render::representations::{RenderContext, project_radius};
 use crate::render::rasterizer::{draw_cylinder, draw_sphere};
+use crate::render::representations::{RenderContext, project_radius};
 
 /// Maximum distance in A between consecutive guide atoms before assuming a chain break.
 pub const MAX_TRACE_BOND_DISTANCE: f32 = 8.0;

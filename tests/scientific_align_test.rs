@@ -76,7 +76,10 @@ fn test_superimpose_structures() {
     let s2 = create_poly_ala(6, Vec3::new(2.0, 3.0, 4.0));
 
     let res = superimpose_structures(&mut s1, &s2).expect("Superposition should succeed");
-    assert!(res.kabsch.rmsd < 1e-4, "Superposition of rigid translation should have 0 RMSD");
+    assert!(
+        res.kabsch.rmsd < 1e-4,
+        "Superposition of rigid translation should have 0 RMSD"
+    );
     assert_eq!(res.per_residue_rmsd.len(), 6);
     for &rmsd in &res.per_residue_rmsd {
         assert!(rmsd < 1e-4);

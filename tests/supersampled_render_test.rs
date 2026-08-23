@@ -58,7 +58,12 @@ fn test_supersampled_render_modes_and_ssaa_factors() {
     let height = 64;
 
     for ssaa in [1, 2, 4] {
-        for mode in [RenderMode::Ribbon, RenderMode::BallAndStick, RenderMode::Vdw, RenderMode::Trace] {
+        for mode in [
+            RenderMode::Ribbon,
+            RenderMode::BallAndStick,
+            RenderMode::Vdw,
+            RenderMode::Trace,
+        ] {
             let rgba = render_supersampled(
                 &structure,
                 mode,
@@ -119,15 +124,21 @@ fn test_png_write_and_header_validity() {
     let temp_path = std::env::temp_dir().join("termpdb_test_supersampled.png");
     let temp_str = temp_path.to_str().unwrap();
 
-    write_png(temp_str, &rgba, width as u32, height as u32)
-        .expect("write_png should succeed");
+    write_png(temp_str, &rgba, width as u32, height as u32).expect("write_png should succeed");
 
     let bytes = std::fs::read(&temp_path).expect("Failed to read back generated PNG");
-    assert!(bytes.len() > 100, "PNG file should contain encoded image data");
+    assert!(
+        bytes.len() > 100,
+        "PNG file should contain encoded image data"
+    );
 
     // Standard PNG magic bytes: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
     let png_magic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    assert_eq!(&bytes[0..8], &png_magic, "File must have valid PNG magic signature");
+    assert_eq!(
+        &bytes[0..8],
+        &png_magic,
+        "File must have valid PNG magic signature"
+    );
 
     let _ = std::fs::remove_file(&temp_path);
 }
@@ -148,6 +159,12 @@ fn test_render_svg_output() {
     );
 
     assert!(svg.starts_with("<svg"), "SVG must start with <svg root tag");
-    assert!(svg.ends_with("</svg>\n") || svg.ends_with("</svg>"), "SVG must end with </svg>");
-    assert!(svg.contains("<circle") || svg.contains("<line"), "SVG must contain rendered primitives");
+    assert!(
+        svg.ends_with("</svg>\n") || svg.ends_with("</svg>"),
+        "SVG must end with </svg>"
+    );
+    assert!(
+        svg.contains("<circle") || svg.contains("<line"),
+        "SVG must contain rendered primitives"
+    );
 }

@@ -1,6 +1,6 @@
 use termpdb::math::Vec3;
-use termpdb::model::{Atom, Element};
 use termpdb::model::spatial::SpatialGrid;
+use termpdb::model::{Atom, Element};
 
 fn create_atom(index: usize, pos: Vec3) -> Atom {
     Atom::new(
@@ -82,7 +82,10 @@ fn test_spatial_grid_burial_detection() {
     let buried = grid.compute_buried_atoms(3.2, 10);
 
     // Atom 0 has 14 neighbors within 3.0 A (>= 10), so it is buried
-    assert!(buried[0], "Center atom with 14 neighbors should be marked buried");
+    assert!(
+        buried[0],
+        "Center atom with 14 neighbors should be marked buried"
+    );
     // Exterior atoms have far fewer surrounding neighbors, so they should NOT be buried
     assert!(!buried[1], "Exterior atom should not be marked buried");
 }

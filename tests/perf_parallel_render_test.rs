@@ -1,8 +1,8 @@
 use termpdb::render::buffer::Framebuffer;
 use termpdb::render::lighting::Lighting;
-use termpdb::render::postprocess::{apply_postprocessing, PostProcessConfig};
+use termpdb::render::postprocess::{PostProcessConfig, apply_postprocessing};
 use termpdb::render::representations::vdw::render_vdw;
-use termpdb::render::representations::{build_render_cache, LodLevel, RenderContext};
+use termpdb::render::representations::{LodLevel, RenderContext, build_render_cache};
 use termpdb::render::{Camera, ColorScheme, LodMode, Visibility};
 
 const SAMPLE_1CRN: &str = r#"HEADER    PLANT SEED PROTEIN                     30-APR-81   1CRN
@@ -55,8 +55,12 @@ fn test_parallel_postprocessing_equivalence() {
 #[test]
 fn test_vdw_rendering_with_culling() {
     let structure = termpdb::parser::parse_pdb(SAMPLE_1CRN).unwrap();
-    let (colors, visible, com, radius, max_vdw) =
-        build_render_cache(&structure, ColorScheme::Cpk, Visibility::default(), LodMode::Full);
+    let (colors, visible, com, radius, max_vdw) = build_render_cache(
+        &structure,
+        ColorScheme::Cpk,
+        Visibility::default(),
+        LodMode::Full,
+    );
 
     let mut camera = Camera::new();
     camera.fit_structure(com, radius);

@@ -1,6 +1,6 @@
-use termpdb::model::{element_by_symbol, Atom, Residue, Structure, Chain};
 use termpdb::math::Vec3;
-use termpdb::render::color::{color_for_atom, ColorScheme};
+use termpdb::model::{Atom, Chain, Residue, Structure, element_by_symbol};
+use termpdb::render::color::{ColorScheme, color_for_atom};
 
 fn make_test_atom(res_name: &str, b_factor: f32, chain_id: &str) -> (Atom, Residue, Structure) {
     let mut structure = Structure::new("test");

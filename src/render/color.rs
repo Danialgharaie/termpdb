@@ -158,14 +158,14 @@ const TOKYO_NIGHT_COLORS: &[PixelColor] = &[
 ];
 
 const GRUVBOX_COLORS: &[PixelColor] = &[
-    (251, 73, 52),  // Red
-    (184, 187, 38), // Green
-    (250, 189, 47), // Yellow
-    (131, 165, 152),// Blue
-    (211, 134, 155),// Purple
-    (142, 192, 124),// Aqua
-    (254, 128, 25), // Orange
-    (235, 219, 178),// Light Gray
+    (251, 73, 52),   // Red
+    (184, 187, 38),  // Green
+    (250, 189, 47),  // Yellow
+    (131, 165, 152), // Blue
+    (211, 134, 155), // Purple
+    (142, 192, 124), // Aqua
+    (254, 128, 25),  // Orange
+    (235, 219, 178), // Light Gray
 ];
 
 /// Converts HSV color to RGB. `h_deg` in [0, 360), `s` in [0, 1], `v` in [0, 1].

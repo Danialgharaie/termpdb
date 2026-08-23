@@ -4,11 +4,7 @@ use termpdb::math::kabsch::{kabsch_align, svd_3x3};
 #[test]
 fn test_svd_3x3_orthogonal() {
     // Identity matrix
-    let a = [
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-    ];
+    let a = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     let (u, s, v) = svd_3x3(a);
 
     // Singular values should be 1.0
@@ -50,7 +46,10 @@ fn test_kabsch_align_identity_and_pure_translation() {
     let q: Vec<Vec3> = p.iter().map(|&v| v + shift).collect();
 
     let res_shift = kabsch_align(&p, &q).expect("Kabsch should align translated sets");
-    assert!(res_shift.rmsd < 1e-5, "RMSD of pure translation should be ~0");
+    assert!(
+        res_shift.rmsd < 1e-5,
+        "RMSD of pure translation should be ~0"
+    );
     assert!((res_shift.translation.x - 5.0).abs() < 1e-4);
     assert!((res_shift.translation.y - (-3.0)).abs() < 1e-4);
     assert!((res_shift.translation.z - 2.0).abs() < 1e-4);

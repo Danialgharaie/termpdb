@@ -1,8 +1,8 @@
 //! 3D Uniform Spatial Hash Grid for fast neighbor queries and occlusion culling.
 
-use std::collections::HashMap;
 use crate::math::Vec3;
 use crate::model::atom::Atom;
+use std::collections::HashMap;
 
 /// A 3D spatial partitioning grid storing atom indices in cubic voxel bins.
 #[derive(Debug, Clone)]
@@ -18,7 +18,8 @@ impl<'a> SpatialGrid<'a> {
     pub fn new(atoms: &'a [Atom], cell_size: f32) -> Self {
         let cell_size = if cell_size > 0.1 { cell_size } else { 3.5 };
         let inv_cell_size = 1.0 / cell_size;
-        let mut cells: HashMap<(i32, i32, i32), Vec<usize>> = HashMap::with_capacity(atoms.len() / 4);
+        let mut cells: HashMap<(i32, i32, i32), Vec<usize>> =
+            HashMap::with_capacity(atoms.len() / 4);
 
         for (idx, atom) in atoms.iter().enumerate() {
             let key = (
@@ -95,7 +96,8 @@ impl<'a> SpatialGrid<'a> {
                         if let Some(indices) = self.cells.get(&(gx, gy, gz)) {
                             for &other_idx in indices {
                                 if other_idx != i && other_idx < self.atoms.len() {
-                                    let dist_sq = self.atoms[other_idx].pos.distance_squared(&atom.pos);
+                                    let dist_sq =
+                                        self.atoms[other_idx].pos.distance_squared(&atom.pos);
                                     if dist_sq <= r_sq {
                                         count += 1;
                                         if count >= min_neighbors {

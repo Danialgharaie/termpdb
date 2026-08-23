@@ -174,8 +174,13 @@ pub fn build_ribbon_geometry(
                     ss: res.secondary_structure,
                 });
 
-                if (res.is_nucleic() || crate::render::representations::nucleic::is_nucleic_residue(&res.name))
-                    && let Some(slab) = crate::render::representations::nucleic::build_base_slab(res, atoms, guide_atom.pos)
+                if (res.is_nucleic()
+                    || crate::render::representations::nucleic::is_nucleic_residue(&res.name))
+                    && let Some(slab) = crate::render::representations::nucleic::build_base_slab(
+                        res,
+                        atoms,
+                        guide_atom.pos,
+                    )
                 {
                     out.push(slab);
                 }
@@ -296,8 +301,16 @@ fn emit_segment_primitives(
 
         let p1 = points[seg];
         let p2 = points[seg + 1];
-        let p0 = if seg > 0 { points[seg - 1] } else { p1 * 2.0 - p2 };
-        let p3 = if seg + 2 < n { points[seg + 2] } else { p2 * 2.0 - p1 };
+        let p0 = if seg > 0 {
+            points[seg - 1]
+        } else {
+            p1 * 2.0 - p2
+        };
+        let p3 = if seg + 2 < n {
+            points[seg + 2]
+        } else {
+            p2 * 2.0 - p1
+        };
 
         let is_strand_c_term = g1.ss == SecondaryStructure::Sheet
             && (seg + 2 >= n || guides[seg + 2].ss != SecondaryStructure::Sheet);
@@ -326,12 +339,20 @@ fn emit_segment_primitives(
                 SecondaryStructure::Sheet => {
                     let n0 = g1.normal.lerp(g2.normal, u0);
                     let mut w0_vec = tan0.cross(n0);
-                    w0_vec = if w0_vec.norm() > 1e-4 { w0_vec.normalize() } else { fallback_perp(tan0) };
+                    w0_vec = if w0_vec.norm() > 1e-4 {
+                        w0_vec.normalize()
+                    } else {
+                        fallback_perp(tan0)
+                    };
                     let ribbon_norm0 = w0_vec.cross(tan0).normalize();
 
                     let n1 = g1.normal.lerp(g2.normal, u1);
                     let mut w1_vec = tan1.cross(n1);
-                    w1_vec = if w1_vec.norm() > 1e-4 { w1_vec.normalize() } else { fallback_perp(tan1) };
+                    w1_vec = if w1_vec.norm() > 1e-4 {
+                        w1_vec.normalize()
+                    } else {
+                        fallback_perp(tan1)
+                    };
                     let ribbon_norm1 = w1_vec.cross(tan1).normalize();
 
                     let hw0 = sheet_half_width(u0, is_strand_c_term);
@@ -384,16 +405,30 @@ pub fn render_ribbon(ctx: &RenderContext, buffer: &mut Framebuffer) {
 
     for prim in geometry {
         match prim {
-            RibbonPrimitive::Cylinder { a, b, r_world, min_r, color } => {
+            RibbonPrimitive::Cylinder {
+                a,
+                b,
+                r_world,
+                min_r,
+                color,
+            } => {
                 let pa = camera.project(&mats, *a, buffer.width, buffer.height);
                 let pb = camera.project(&mats, *b, buffer.width, buffer.height);
                 if let (Some(sa), Some(sb)) = (pa, pb) {
                     let avg_depth = (sa.2 + sb.2) * 0.5;
-                    let cyl_r = project_radius(*r_world, avg_depth, camera.fov, buffer.height).max(*min_r);
+                    let cyl_r =
+                        project_radius(*r_world, avg_depth, camera.fov, buffer.height).max(*min_r);
                     draw_cylinder(buffer, sa, sb, cyl_r, *color, lighting);
                 }
             }
-            RibbonPrimitive::SheetQuad { v0l, v0r, v1l, v1r, normal, color } => {
+            RibbonPrimitive::SheetQuad {
+                v0l,
+                v0r,
+                v1l,
+                v1r,
+                normal,
+                color,
+            } => {
                 let sl0 = camera.project(&mats, *v0l, buffer.width, buffer.height);
                 let sr0 = camera.project(&mats, *v0r, buffer.width, buffer.height);
                 let sl1 = camera.project(&mats, *v1l, buffer.width, buffer.height);
@@ -407,9 +442,15 @@ pub fn render_ribbon(ctx: &RenderContext, buffer: &mut Framebuffer) {
                     draw_line_3d(buffer, sr0, sr1, *color);
                 }
             }
-            RibbonPrimitive::Sphere { c, r_world, min_r, color } => {
+            RibbonPrimitive::Sphere {
+                c,
+                r_world,
+                min_r,
+                color,
+            } => {
                 if let Some(pt) = camera.project(&mats, *c, buffer.width, buffer.height) {
-                    let sphere_r = project_radius(*r_world, pt.2, camera.fov, buffer.height).max(*min_r);
+                    let sphere_r =
+                        project_radius(*r_world, pt.2, camera.fov, buffer.height).max(*min_r);
                     draw_sphere(buffer, pt, sphere_r, *color, lighting);
                 }
             }

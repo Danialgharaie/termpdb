@@ -85,7 +85,9 @@ impl Selection {
         let p2 = atoms.get(self.indices[1])?.pos;
         let p3 = atoms.get(self.indices[2])?.pos;
         let p4 = atoms.get(self.indices[3])?.pos;
-        Some(crate::model::geometry::calculate_dihedral_angle(p1, p2, p3, p4))
+        Some(crate::model::geometry::calculate_dihedral_angle(
+            p1, p2, p3, p4,
+        ))
     }
 
     /// Returns a full formatted geometry status description for the HUD status.
@@ -119,7 +121,10 @@ impl Selection {
                 let d = atom_label(structure, self.indices[3]);
                 if let Some(dih) = self.dihedral(structure) {
                     let rama = crate::model::geometry::classify_ramachandran(dih, 0.0);
-                    format!("Dihedral: {dih:.1}° [{}] ({a} · {b} · {c} · {d})", rama.name())
+                    format!(
+                        "Dihedral: {dih:.1}° [{}] ({a} · {b} · {c} · {d})",
+                        rama.name()
+                    )
                 } else {
                     format!("{a} · {b} · {c} · {d}")
                 }
@@ -155,7 +160,10 @@ impl Selection {
         let d = atom_label(structure, self.indices[3]);
         if let Some(dih) = self.dihedral(structure) {
             let rama = crate::model::geometry::classify_ramachandran(dih, 0.0);
-            Some(format!("{a} · {b} · {c} · {d}  {dih:.1}° [{}]", rama.name()))
+            Some(format!(
+                "{a} · {b} · {c} · {d}  {dih:.1}° [{}]",
+                rama.name()
+            ))
         } else {
             Some(format!("{a} · {b} · {c} · {d}"))
         }
@@ -351,7 +359,8 @@ pub fn angle_report(structure: &Structure, triplet: &str) -> Result<String> {
         .collect();
     if parts.len() != 3 {
         return Err(TermPdbError::ParseError(
-            "Expected three atom specifiers separated by commas (e.g. A:1:CA,A:2:CA,A:3:CA)".to_string(),
+            "Expected three atom specifiers separated by commas (e.g. A:1:CA,A:2:CA,A:3:CA)"
+                .to_string(),
         ));
     }
     let a = parse_atom_spec(parts[0])?;
@@ -361,7 +370,8 @@ pub fn angle_report(structure: &Structure, triplet: &str) -> Result<String> {
     let j = resolve_atom(structure, &b, None)?;
     let k = resolve_atom(structure, &c, None)?;
     let atoms = structure.atoms();
-    let ang = crate::model::geometry::calculate_bond_angle(atoms[i].pos, atoms[j].pos, atoms[k].pos);
+    let ang =
+        crate::model::geometry::calculate_bond_angle(atoms[i].pos, atoms[j].pos, atoms[k].pos);
     Ok(format!(
         "{}  {}  {}  {:.2}°",
         atom_label(structure, i),
@@ -380,7 +390,8 @@ pub fn dihedral_report(structure: &Structure, quartet: &str) -> Result<String> {
         .collect();
     if parts.len() != 4 {
         return Err(TermPdbError::ParseError(
-            "Expected four atom specifiers separated by commas (e.g. A:1:N,A:1:CA,A:1:C,A:2:N)".to_string(),
+            "Expected four atom specifiers separated by commas (e.g. A:1:N,A:1:CA,A:1:C,A:2:N)"
+                .to_string(),
         ));
     }
     let a = parse_atom_spec(parts[0])?;
@@ -392,7 +403,12 @@ pub fn dihedral_report(structure: &Structure, quartet: &str) -> Result<String> {
     let k = resolve_atom(structure, &c, None)?;
     let l = resolve_atom(structure, &d, None)?;
     let atoms = structure.atoms();
-    let dih = crate::model::geometry::calculate_dihedral_angle(atoms[i].pos, atoms[j].pos, atoms[k].pos, atoms[l].pos);
+    let dih = crate::model::geometry::calculate_dihedral_angle(
+        atoms[i].pos,
+        atoms[j].pos,
+        atoms[k].pos,
+        atoms[l].pos,
+    );
     let rama = crate::model::geometry::classify_ramachandran(dih, 0.0);
     Ok(format!(
         "{}  {}  {}  {}  {:.2}° [{}]",

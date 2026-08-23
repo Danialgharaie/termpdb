@@ -17,14 +17,18 @@ pub mod spatial;
 
 use std::collections::HashMap;
 
-pub use align::{SuperpositionResult, needleman_wunsch, pair_ca_coordinates, superimpose_structures};
+pub use align::{
+    SuperpositionResult, needleman_wunsch, pair_ca_coordinates, superimpose_structures,
+};
 pub use assembly::{Assembly, AssemblyGen, expand_model};
 pub use atom::Atom;
 pub use bond::{Bond, BondDetector, BondOrder};
 pub use chain::Chain;
 pub use dssp::{assign_dssp, calculate_dssp_hbond_energy};
 pub use elements::{ELEMENTS, Element, element_by_atomic_number, element_by_symbol};
-pub use geometry::{RamachandranRegion, calculate_bond_angle, calculate_dihedral_angle, classify_ramachandran};
+pub use geometry::{
+    RamachandranRegion, calculate_bond_angle, calculate_dihedral_angle, classify_ramachandran,
+};
 pub use interactions::{Interaction, InteractionKind, detect_interactions};
 pub use residue::{Residue, SecondaryStructure};
 pub use spatial::SpatialGrid;

@@ -18,9 +18,23 @@ pub fn is_nucleic_residue(res_name: &str) -> bool {
     let s = res_name.trim().to_ascii_uppercase();
     matches!(
         s.as_str(),
-        "A" | "C" | "G" | "T" | "U"
-            | "DA" | "DC" | "DG" | "DT"
-            | "DI" | "I" | "5MC" | "OMC" | "1MA" | "2MG" | "7MG" | "H2U" | "PSU"
+        "A" | "C"
+            | "G"
+            | "T"
+            | "U"
+            | "DA"
+            | "DC"
+            | "DG"
+            | "DT"
+            | "DI"
+            | "I"
+            | "5MC"
+            | "OMC"
+            | "1MA"
+            | "2MG"
+            | "7MG"
+            | "H2U"
+            | "PSU"
     )
 }
 
@@ -28,12 +42,12 @@ pub fn is_nucleic_residue(res_name: &str) -> bool {
 pub fn base_color(res_name: &str) -> PixelColor {
     let s = res_name.trim().to_ascii_uppercase();
     match s.as_str() {
-        "A" | "DA" | "1MA" => (50, 190, 80),    // Green
-        "T" | "DT" => (225, 50, 50),            // Red
+        "A" | "DA" | "1MA" => (50, 190, 80),          // Green
+        "T" | "DT" => (225, 50, 50),                  // Red
         "G" | "DG" | "2MG" | "7MG" => (235, 195, 35), // Yellow
-        "C" | "DC" | "5MC" | "OMC" => (40, 190, 230),  // Cyan
-        "U" | "H2U" | "PSU" => (230, 85, 130),  // Rose
-        _ => (160, 160, 160),                   // Gray
+        "C" | "DC" | "5MC" | "OMC" => (40, 190, 230), // Cyan
+        "U" | "H2U" | "PSU" => (230, 85, 130),        // Rose
+        _ => (160, 160, 160),                         // Gray
     }
 }
 
@@ -51,7 +65,11 @@ pub fn build_base_slab(
         let Some(atom) = atoms.get(idx) else { continue };
         let name = atom.name.trim();
         // Ignore phosphate and ribose atoms (P, OP1, OP2, O5', C5', C4', O4', C3', O3', C2', O2', C1')
-        if name.starts_with('P') || name.starts_with("OP") || name.ends_with('\'') || name.ends_with('*') {
+        if name.starts_with('P')
+            || name.starts_with("OP")
+            || name.ends_with('\'')
+            || name.ends_with('*')
+        {
             continue;
         }
         base_centroid += atom.pos;

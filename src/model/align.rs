@@ -133,9 +133,22 @@ pub fn pair_ca_coordinates(s1: &Structure, s2: &Structure) -> Vec<(Vec3, Vec3)> 
     let mut pairs = Vec::new();
 
     for c1 in s1.chains() {
-        if let Some(c2) = s2.chains().iter().find(|c| c.id == c1.id).or_else(|| s2.chains().first()) {
-            let seq1: String = c1.residues.iter().map(|r| residue_to_one_letter(&r.name)).collect();
-            let seq2: String = c2.residues.iter().map(|r| residue_to_one_letter(&r.name)).collect();
+        if let Some(c2) = s2
+            .chains()
+            .iter()
+            .find(|c| c.id == c1.id)
+            .or_else(|| s2.chains().first())
+        {
+            let seq1: String = c1
+                .residues
+                .iter()
+                .map(|r| residue_to_one_letter(&r.name))
+                .collect();
+            let seq2: String = c2
+                .residues
+                .iter()
+                .map(|r| residue_to_one_letter(&r.name))
+                .collect();
 
             let alignment = needleman_wunsch(&seq1, &seq2);
             let atoms1 = s1.atoms();
@@ -146,8 +159,12 @@ pub fn pair_ca_coordinates(s1: &Structure, s2: &Structure) -> Vec<(Vec3, Vec3)> 
                     let r1 = &c1.residues[i];
                     let r2 = &c2.residues[j];
 
-                    let ca1 = r1.ca_atom(atoms1).or_else(|| r1.atom_indices.first().map(|&idx| &atoms1[idx]));
-                    let ca2 = r2.ca_atom(atoms2).or_else(|| r2.atom_indices.first().map(|&idx| &atoms2[idx]));
+                    let ca1 = r1
+                        .ca_atom(atoms1)
+                        .or_else(|| r1.atom_indices.first().map(|&idx| &atoms1[idx]));
+                    let ca2 = r2
+                        .ca_atom(atoms2)
+                        .or_else(|| r2.atom_indices.first().map(|&idx| &atoms2[idx]));
 
                     if let (Some(a1), Some(a2)) = (ca1, ca2) {
                         pairs.push((a1.pos, a2.pos));

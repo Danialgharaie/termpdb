@@ -1,8 +1,6 @@
 use clap::Parser;
 use termpdb::cli::Cli;
-use termpdb::render::{
-    export_ansi_with_visibility, ColorScheme, LodMode, RenderMode, Visibility,
-};
+use termpdb::render::{ColorScheme, LodMode, RenderMode, Visibility, export_ansi_with_visibility};
 
 const SAMPLE_1CRN: &str = r#"HEADER    PLANT SEED PROTEIN                     30-APR-81   1CRN
 COMPND    MOL_ID: 1; MOLECULE: CRAMBIN; CHAIN: A; ENGINEERED: NO
@@ -52,7 +50,11 @@ fn test_all_12_color_schemes_cycle_and_render() {
             Visibility::default(),
             LodMode::Auto,
         );
-        assert!(!ansi.is_empty(), "Color scheme {:?} should export ANSI", scheme);
+        assert!(
+            !ansi.is_empty(),
+            "Color scheme {:?} should export ANSI",
+            scheme
+        );
         assert!(ansi.contains("\x1b[38;2;"));
     }
 }

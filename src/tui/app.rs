@@ -11,9 +11,9 @@ use ratatui::widgets::Paragraph;
 use crate::math::Vec3;
 use crate::model::Structure;
 use crate::render::{
-    Camera, ColorScheme, Framebuffer, Lighting, LodMode, PixelColor, RibbonPrimitive,
-    RenderContext, RenderMode, Visibility, build_render_cache, build_ribbon_geometry,
-    draw_selection_markers, render_structure_ctx,
+    Camera, ColorScheme, Framebuffer, Lighting, LodMode, PixelColor, RenderContext, RenderMode,
+    RibbonPrimitive, Visibility, build_render_cache, build_ribbon_geometry, draw_selection_markers,
+    render_structure_ctx,
 };
 use crate::select::{Selection, parse_atom_spec, pick_atom_at_screen, resolve_atom};
 use crate::tui::events::{AppAction, MouseState, handle_key_event, handle_mouse_event};
@@ -564,11 +564,28 @@ impl App {
                     let a1 = &atoms[inter.atom1_idx];
                     let a2 = &atoms[inter.atom2_idx];
                     if let (Some(p1), Some(p2)) = (
-                        self.camera.project(&ctx.mats, a1.pos, self.framebuffer.width, self.framebuffer.height),
-                        self.camera.project(&ctx.mats, a2.pos, self.framebuffer.width, self.framebuffer.height),
+                        self.camera.project(
+                            &ctx.mats,
+                            a1.pos,
+                            self.framebuffer.width,
+                            self.framebuffer.height,
+                        ),
+                        self.camera.project(
+                            &ctx.mats,
+                            a2.pos,
+                            self.framebuffer.width,
+                            self.framebuffer.height,
+                        ),
                     ) {
                         let color = inter.kind.default_color();
-                        crate::render::rasterizer::draw_dashed_line_3d(&mut self.framebuffer, p1, p2, color, 4.0, 2.0);
+                        crate::render::rasterizer::draw_dashed_line_3d(
+                            &mut self.framebuffer,
+                            p1,
+                            p2,
+                            color,
+                            4.0,
+                            2.0,
+                        );
                     }
                 }
             }
@@ -581,7 +598,10 @@ impl App {
             self.selection.atoms(),
         );
 
-        crate::render::postprocess::apply_postprocessing(&mut self.framebuffer, &self.postprocess_config);
+        crate::render::postprocess::apply_postprocessing(
+            &mut self.framebuffer,
+            &self.postprocess_config,
+        );
     }
 
     /// Rebuilds the per-atom render cache (colors, visibility flags, bounding
@@ -592,8 +612,12 @@ impl App {
         if !self.render_cache_dirty {
             return;
         }
-        let (colors, visible, com, radius, max_vdw) =
-            build_render_cache(&self.structure, self.color_scheme, self.visibility, self.lod);
+        let (colors, visible, com, radius, max_vdw) = build_render_cache(
+            &self.structure,
+            self.color_scheme,
+            self.visibility,
+            self.lod,
+        );
         let level = self.lod.resolve(self.structure.atom_count());
         let ribbon_geometry = if self.render_mode == RenderMode::Ribbon {
             build_ribbon_geometry(&self.structure, &colors, &visible, self.visibility, level)

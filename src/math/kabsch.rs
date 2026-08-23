@@ -34,11 +34,7 @@ impl KabschResult {
 /// Returns eigenvalues and eigenvector columns matrix $V$: $A V = V \Lambda$.
 #[allow(clippy::needless_range_loop)]
 pub fn jacobi_eigen_3x3(mut a: [[f32; 3]; 3]) -> ([f32; 3], [[f32; 3]; 3]) {
-    let mut v = [
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0],
-    ];
+    let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
     for _ in 0..50 {
         // Find largest off-diagonal element
@@ -129,7 +125,11 @@ pub fn svd_3x3(a: [[f32; 3]; 3]) -> ([[f32; 3]; 3], [f32; 3], [[f32; 3]; 3]) {
 
     // Sort singular values descending
     let mut order = [0, 1, 2];
-    order.sort_by(|&i, &j| evals[j].partial_cmp(&evals[i]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|&i, &j| {
+        evals[j]
+            .partial_cmp(&evals[i])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut s = [0.0f32; 3];
     let mut v = [[0.0f32; 3]; 3];
@@ -159,17 +159,27 @@ pub fn svd_3x3(a: [[f32; 3]; 3]) -> ([[f32; 3]; 3], [f32; 3], [[f32; 3]; 3]) {
     if s[1] <= 1e-5 {
         // u0 is valid; compute u1 and u2 perpendicular to u0
         let u0 = Vec3::new(u[0][0], u[1][0], u[2][0]);
-        let temp = if u0.x.abs() < 0.8 { Vec3::new(1.0, 0.0, 0.0) } else { Vec3::new(0.0, 1.0, 0.0) };
+        let temp = if u0.x.abs() < 0.8 {
+            Vec3::new(1.0, 0.0, 0.0)
+        } else {
+            Vec3::new(0.0, 1.0, 0.0)
+        };
         let u1 = u0.cross(temp).normalize();
         let u2 = u0.cross(u1).normalize();
-        u[0][1] = u1.x; u[1][1] = u1.y; u[2][1] = u1.z;
-        u[0][2] = u2.x; u[1][2] = u2.y; u[2][2] = u2.z;
+        u[0][1] = u1.x;
+        u[1][1] = u1.y;
+        u[2][1] = u1.z;
+        u[0][2] = u2.x;
+        u[1][2] = u2.y;
+        u[2][2] = u2.z;
     } else if s[2] <= 1e-5 {
         // u0 and u1 are valid; u2 = u0 x u1
         let u0 = Vec3::new(u[0][0], u[1][0], u[2][0]);
         let u1 = Vec3::new(u[0][1], u[1][1], u[2][1]);
         let u2 = u0.cross(u1).normalize();
-        u[0][2] = u2.x; u[1][2] = u2.y; u[2][2] = u2.z;
+        u[0][2] = u2.x;
+        u[1][2] = u2.y;
+        u[2][2] = u2.z;
     }
 
     (u, s, v)
@@ -271,8 +281,5 @@ pub fn kabsch_align(p: &[Vec3], q: &[Vec3]) -> Option<KabschResult> {
     }
     let rmsd = (sum_sq / n).sqrt();
 
-    Some(KabschResult {
-        rmsd,
-        ..res
-    })
+    Some(KabschResult { rmsd, ..res })
 }

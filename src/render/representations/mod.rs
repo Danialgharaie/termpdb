@@ -420,8 +420,10 @@ pub fn render_structure_ctx(ctx: &RenderContext, mode: RenderMode, buffer: &mut 
                         continue;
                     }
                     if let (Some(p1), Some(p2)) = (
-                        ctx.camera.project(&ctx.mats, a1.pos, buffer.width, buffer.height),
-                        ctx.camera.project(&ctx.mats, a2.pos, buffer.width, buffer.height),
+                        ctx.camera
+                            .project(&ctx.mats, a1.pos, buffer.width, buffer.height),
+                        ctx.camera
+                            .project(&ctx.mats, a2.pos, buffer.width, buffer.height),
                     ) {
                         let c1 = ctx.colors[a1.index];
                         crate::render::rasterizer::draw_line_3d(buffer, p1, p2, c1);

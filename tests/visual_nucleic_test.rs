@@ -1,5 +1,5 @@
 use termpdb::math::Vec3;
-use termpdb::model::{element_by_symbol, Atom, Residue};
+use termpdb::model::{Atom, Residue, element_by_symbol};
 use termpdb::render::representations::nucleic::{base_color, build_base_slab, is_nucleic_residue};
 
 #[test]

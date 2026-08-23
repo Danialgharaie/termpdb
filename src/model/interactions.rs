@@ -20,7 +20,7 @@ impl InteractionKind {
         match self {
             InteractionKind::Disulfide => (255, 215, 0),      // Gold
             InteractionKind::HydrogenBond => (100, 240, 255), // Cyan
-            InteractionKind::SaltBridge => (255, 80, 200),     // Magenta
+            InteractionKind::SaltBridge => (255, 80, 200),    // Magenta
         }
     }
 }

@@ -18,6 +18,7 @@ pub use braille::BrailleBuffer;
 pub use buffer::{Framebuffer, FramebufferBand, PixelColor};
 pub use camera::Camera;
 pub use color::{ColorScheme, color_for_atom};
+pub use export::{downsample_rgba, export_mp4, render_supersampled, render_svg, write_png};
 pub use lighting::Lighting;
 pub use postprocess::{PostProcessConfig, apply_postprocessing};
 pub use rasterizer::{
@@ -25,10 +26,9 @@ pub use rasterizer::{
     draw_sphere, draw_sphere_band, draw_triangle_3d,
 };
 pub use representations::{
-    LodMode, RenderMode, RenderContext, RibbonPrimitive, Visibility, build_render_cache,
+    LodMode, RenderContext, RenderMode, RibbonPrimitive, Visibility, build_render_cache,
     build_ribbon_geometry, render_structure, render_structure_ctx,
 };
-pub use export::{downsample_rgba, export_mp4, render_supersampled, render_svg, write_png};
 
 use crate::model::Structure;
 

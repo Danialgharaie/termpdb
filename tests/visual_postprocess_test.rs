@@ -1,5 +1,5 @@
 use termpdb::render::buffer::Framebuffer;
-use termpdb::render::postprocess::{apply_postprocessing, PostProcessConfig};
+use termpdb::render::postprocess::{PostProcessConfig, apply_postprocessing};
 
 #[test]
 fn test_silhouette_outline_detects_edges() {
@@ -27,8 +27,15 @@ fn test_silhouette_outline_detects_edges() {
     // Center of square (4, 4) or (5, 5) surrounded by depth 5.0 should remain original color
     let center_color = fb.get_pixel(4, 4).unwrap();
 
-    assert!(border_color.0 < center_color.0, "Border pixel should be darkened as an outline");
-    assert_eq!(center_color, (200, 200, 200), "Interior pixel should retain full brightness");
+    assert!(
+        border_color.0 < center_color.0,
+        "Border pixel should be darkened as an outline"
+    );
+    assert_eq!(
+        center_color,
+        (200, 200, 200),
+        "Interior pixel should retain full brightness"
+    );
 }
 
 #[test]
@@ -65,5 +72,8 @@ fn test_ssao_darkens_cavities() {
 
     let cavity_pixel = fb.get_pixel(5, 5).unwrap();
     // Cavity pixel (5,5) at depth 10.0 surrounded by walls at depth 8.0 should be occluded & darkened
-    assert!(cavity_pixel.0 < 180, "Cavity pixel should have lower brightness due to SSAO");
+    assert!(
+        cavity_pixel.0 < 180,
+        "Cavity pixel should have lower brightness due to SSAO"
+    );
 }

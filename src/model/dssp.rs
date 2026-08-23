@@ -150,7 +150,12 @@ pub fn assign_dssp(structure: &mut Structure) -> usize {
             }
             // Antiparallel bridge: (i->j and j->i) or (i-1->j+1 and j-1->i+1)
             let ap_bridge = (hb[i][j] && hb[j][i])
-                || (i > 0 && j + 1 < n && j > 0 && i + 1 < n && hb[i - 1][j + 1] && hb[j - 1][i + 1]);
+                || (i > 0
+                    && j + 1 < n
+                    && j > 0
+                    && i + 1 < n
+                    && hb[i - 1][j + 1]
+                    && hb[j - 1][i + 1]);
 
             // Parallel bridge: (i-1->j and j->i+1) or (j-1->i and i->j+1)
             let p_bridge = (i > 0 && i + 1 < n && hb[i - 1][j] && hb[j][i + 1])

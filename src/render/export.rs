@@ -7,16 +7,16 @@ use std::process::Command;
 use crate::error::{Result, TermPdbError};
 use crate::math::Vec3;
 use crate::model::Structure;
+use crate::render::PixelColor;
 use crate::render::buffer::Framebuffer;
 use crate::render::camera::{Camera, CameraMatrices};
 use crate::render::color::ColorScheme;
 use crate::render::lighting::Lighting;
+use crate::render::representations::trace::{MAX_TRACE_BOND_DISTANCE, find_trace_guide_atom};
 use crate::render::representations::{
-    LodMode, RenderMode, Visibility, build_render_cache, build_ribbon_geometry, project_radius,
-    render_structure, RibbonPrimitive,
+    LodMode, RenderMode, RibbonPrimitive, Visibility, build_render_cache, build_ribbon_geometry,
+    project_radius, render_structure,
 };
-use crate::render::representations::trace::{find_trace_guide_atom, MAX_TRACE_BOND_DISTANCE};
-use crate::render::PixelColor;
 
 fn fit_camera(structure: &Structure, sw: usize, sh: usize) -> Camera {
     let mut camera = Camera::new();
@@ -45,7 +45,9 @@ pub fn render_supersampled(
     let camera = fit_camera(structure, sw, sh);
     let lighting = Lighting::default();
     fb.clear((0, 0, 0));
-    render_structure(structure, mode, color, &camera, &mut fb, &lighting, visibility, lod);
+    render_structure(
+        structure, mode, color, &camera, &mut fb, &lighting, visibility, lod,
+    );
     downsample_rgba(&fb, width, height, ssaa)
 }
 
@@ -105,9 +107,27 @@ pub fn write_png(path: &str, rgba: &[u8], width: u32, height: u32) -> Result<()>
 }
 
 enum SvgPrim {
-    Circle { cx: f32, cy: f32, r: f32, depth: f32, color: PixelColor },
-    Line { x1: f32, y1: f32, x2: f32, y2: f32, w: f32, depth: f32, color: PixelColor },
-    Polygon { pts: Vec<(f32, f32)>, depth: f32, color: PixelColor },
+    Circle {
+        cx: f32,
+        cy: f32,
+        r: f32,
+        depth: f32,
+        color: PixelColor,
+    },
+    Line {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        w: f32,
+        depth: f32,
+        color: PixelColor,
+    },
+    Polygon {
+        pts: Vec<(f32, f32)>,
+        depth: f32,
+        color: PixelColor,
+    },
 }
 
 impl SvgPrim {
@@ -130,14 +150,22 @@ impl SvgPrim {
         let fill = format!("rgb({},{},{})", cr, cg, cb);
         match self {
             SvgPrim::Circle { cx, cy, r, .. } => {
-                format!(r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="{}"/>"#, cx, cy, r, fill)
+                format!(
+                    r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="{}"/>"#,
+                    cx, cy, r, fill
+                )
             }
-            SvgPrim::Line { x1, y1, x2, y2, w, .. } => format!(
+            SvgPrim::Line {
+                x1, y1, x2, y2, w, ..
+            } => format!(
                 r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="{}" stroke-width="{:.2}" stroke-linecap="round"/>"#,
                 x1, y1, x2, y2, fill, w
             ),
             SvgPrim::Polygon { pts, .. } => {
-                let pts: Vec<String> = pts.iter().map(|(x, y)| format!("{:.2},{:.2}", x, y)).collect();
+                let pts: Vec<String> = pts
+                    .iter()
+                    .map(|(x, y)| format!("{:.2},{:.2}", x, y))
+                    .collect();
                 format!(r#"<polygon points="{}" fill="{}"/>"#, pts.join(" "), fill)
             }
         }
@@ -173,8 +201,15 @@ pub fn render_svg(
                     let rw = atom.vdw_radius();
                     let rw = if rw > 0.1 { rw } else { 1.5 };
                     let r = project_radius(rw, depth, camera.fov, height).max(1.0);
-                    let lit = lighting.shade(cam_z, depth, colors[atom.index], depth - rw, depth + rw);
-                    prims.push(SvgPrim::Circle { cx: sx, cy: sy, r, depth, color: lit });
+                    let lit =
+                        lighting.shade(cam_z, depth, colors[atom.index], depth - rw, depth + rw);
+                    prims.push(SvgPrim::Circle {
+                        cx: sx,
+                        cy: sy,
+                        r,
+                        depth,
+                        color: lit,
+                    });
                 }
             }
         }
@@ -185,15 +220,39 @@ pub fn render_svg(
                 }
                 if let Some((sx, sy, depth)) = proj(atom.pos) {
                     let r = project_radius(0.38, depth, camera.fov, height).max(0.8);
-                    let lit = lighting.shade(cam_z, depth, colors[atom.index], depth - 0.38, depth + 0.38);
-                    prims.push(SvgPrim::Circle { cx: sx, cy: sy, r, depth, color: lit });
+                    let lit = lighting.shade(
+                        cam_z,
+                        depth,
+                        colors[atom.index],
+                        depth - 0.38,
+                        depth + 0.38,
+                    );
+                    prims.push(SvgPrim::Circle {
+                        cx: sx,
+                        cy: sy,
+                        r,
+                        depth,
+                        color: lit,
+                    });
                 }
             }
-            push_bond_lines(structure, &colors, &visible, &mats, &camera, &lighting, width, height, &mut prims, |_| true);
+            push_bond_lines(
+                structure,
+                &colors,
+                &visible,
+                &mats,
+                &camera,
+                &lighting,
+                width,
+                height,
+                &mut prims,
+                |_| true,
+            );
         }
         RenderMode::Trace => {
             for chain in structure.chains() {
-                let mut guides: Vec<&crate::model::atom::Atom> = Vec::with_capacity(chain.residues.len());
+                let mut guides: Vec<&crate::model::atom::Atom> =
+                    Vec::with_capacity(chain.residues.len());
                 for res in &chain.residues {
                     if !visibility.residue_visible(res) {
                         continue;
@@ -211,44 +270,107 @@ pub fn render_svg(
                     if let (Some(p1), Some(p2)) = (proj(a1.pos), proj(a2.pos)) {
                         let avg = (p1.2 + p2.2) * 0.5;
                         let w = project_radius(0.35, avg, camera.fov, height).max(0.6) * 2.0;
-                        let c = lighting.shade(cam_z, avg, colors[a1.index], avg - 0.35, avg + 0.35);
-                        prims.push(SvgPrim::Line { x1: p1.0, y1: p1.1, x2: p2.0, y2: p2.1, w, depth: avg, color: c });
+                        let c =
+                            lighting.shade(cam_z, avg, colors[a1.index], avg - 0.35, avg + 0.35);
+                        prims.push(SvgPrim::Line {
+                            x1: p1.0,
+                            y1: p1.1,
+                            x2: p2.0,
+                            y2: p2.1,
+                            w,
+                            depth: avg,
+                            color: c,
+                        });
                     }
                 }
                 for g in &guides {
                     if let Some((sx, sy, depth)) = proj(g.pos) {
                         let r = project_radius(0.40, depth, camera.fov, height).max(0.7);
-                        let lit = lighting.shade(cam_z, depth, colors[g.index], depth - 0.40, depth + 0.40);
-                        prims.push(SvgPrim::Circle { cx: sx, cy: sy, r, depth, color: lit });
+                        let lit = lighting.shade(
+                            cam_z,
+                            depth,
+                            colors[g.index],
+                            depth - 0.40,
+                            depth + 0.40,
+                        );
+                        prims.push(SvgPrim::Circle {
+                            cx: sx,
+                            cy: sy,
+                            r,
+                            depth,
+                            color: lit,
+                        });
                     }
                 }
             }
             for atom in atoms {
-                if atom.is_hetatm && visible[atom.index]
+                if atom.is_hetatm
+                    && visible[atom.index]
                     && let Some((sx, sy, depth)) = proj(atom.pos)
                 {
                     let rw = (atom.vdw_radius() * 0.28).clamp(0.35, 0.65);
                     let r = project_radius(rw, depth, camera.fov, height).max(0.7);
-                    let lit = lighting.shade(cam_z, depth, colors[atom.index], depth - rw, depth + rw);
-                    prims.push(SvgPrim::Circle { cx: sx, cy: sy, r, depth, color: lit });
+                    let lit =
+                        lighting.shade(cam_z, depth, colors[atom.index], depth - rw, depth + rw);
+                    prims.push(SvgPrim::Circle {
+                        cx: sx,
+                        cy: sy,
+                        r,
+                        depth,
+                        color: lit,
+                    });
                 }
             }
-            push_bond_lines(structure, &colors, &visible, &mats, &camera, &lighting, width, height, &mut prims, |a| a.is_hetatm);
+            push_bond_lines(
+                structure,
+                &colors,
+                &visible,
+                &mats,
+                &camera,
+                &lighting,
+                width,
+                height,
+                &mut prims,
+                |a| a.is_hetatm,
+            );
         }
         RenderMode::Ribbon => {
             let level = lod.resolve(structure.atom_count());
             let geom = build_ribbon_geometry(structure, &colors, &visible, visibility, level);
             for p in &geom {
                 match p {
-                    RibbonPrimitive::Cylinder { a, b, r_world, min_r, color } => {
+                    RibbonPrimitive::Cylinder {
+                        a,
+                        b,
+                        r_world,
+                        min_r,
+                        color,
+                    } => {
                         if let (Some(p1), Some(p2)) = (proj(*a), proj(*b)) {
                             let avg = (p1.2 + p2.2) * 0.5;
-                            let w = project_radius(*r_world, avg, camera.fov, height).max(*min_r) * 2.0;
-                            let lit = lighting.shade(cam_z, avg, *color, avg - *r_world, avg + *r_world);
-                            prims.push(SvgPrim::Line { x1: p1.0, y1: p1.1, x2: p2.0, y2: p2.1, w, depth: avg, color: lit });
+                            let w =
+                                project_radius(*r_world, avg, camera.fov, height).max(*min_r) * 2.0;
+                            let lit =
+                                lighting.shade(cam_z, avg, *color, avg - *r_world, avg + *r_world);
+                            prims.push(SvgPrim::Line {
+                                x1: p1.0,
+                                y1: p1.1,
+                                x2: p2.0,
+                                y2: p2.1,
+                                w,
+                                depth: avg,
+                                color: lit,
+                            });
                         }
                     }
-                    RibbonPrimitive::SheetQuad { v0l, v0r, v1l, v1r, normal, color } => {
+                    RibbonPrimitive::SheetQuad {
+                        v0l,
+                        v0r,
+                        v1l,
+                        v1r,
+                        normal,
+                        color,
+                    } => {
                         let s0l = proj(*v0l);
                         let s0r = proj(*v0r);
                         let s1l = proj(*v1l);
@@ -256,25 +378,61 @@ pub fn render_svg(
                         if let (Some(a), Some(b), Some(c), Some(d)) = (s0l, s0r, s1l, s1r) {
                             let avg = (a.2 + b.2 + c.2 + d.2) * 0.25;
                             let lit = lighting.shade(*normal, avg, *color, avg - 0.5, avg + 0.5);
-                            prims.push(SvgPrim::Polygon { pts: vec![(a.0, a.1), (b.0, b.1), (d.0, d.1), (c.0, c.1)], depth: avg, color: lit });
+                            prims.push(SvgPrim::Polygon {
+                                pts: vec![(a.0, a.1), (b.0, b.1), (d.0, d.1), (c.0, c.1)],
+                                depth: avg,
+                                color: lit,
+                            });
                         }
                     }
-                    RibbonPrimitive::Sphere { c, r_world, min_r, color } => {
+                    RibbonPrimitive::Sphere {
+                        c,
+                        r_world,
+                        min_r,
+                        color,
+                    } => {
                         if let Some((sx, sy, depth)) = proj(*c) {
                             let r = project_radius(*r_world, depth, camera.fov, height).max(*min_r);
-                            let lit = lighting.shade(cam_z, depth, *color, depth - *r_world, depth + *r_world);
-                            prims.push(SvgPrim::Circle { cx: sx, cy: sy, r, depth, color: lit });
+                            let lit = lighting.shade(
+                                cam_z,
+                                depth,
+                                *color,
+                                depth - *r_world,
+                                depth + *r_world,
+                            );
+                            prims.push(SvgPrim::Circle {
+                                cx: sx,
+                                cy: sy,
+                                r,
+                                depth,
+                                color: lit,
+                            });
                         }
                     }
                 }
             }
         }
         RenderMode::Wireframe => {
-            push_bond_lines(structure, &colors, &visible, &mats, &camera, &lighting, width, height, &mut prims, |_| true);
+            push_bond_lines(
+                structure,
+                &colors,
+                &visible,
+                &mats,
+                &camera,
+                &lighting,
+                width,
+                height,
+                &mut prims,
+                |_| true,
+            );
         }
     }
 
-    prims.sort_by(|a, b| b.depth().partial_cmp(&a.depth()).unwrap_or(std::cmp::Ordering::Equal));
+    prims.sort_by(|a, b| {
+        b.depth()
+            .partial_cmp(&a.depth())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut s = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}" width="{}" height="{}">
 <rect width="{}" height="{}" fill="black"/>
@@ -321,11 +479,39 @@ fn push_bond_lines(
         ) {
             let avg = (p1.2 + p2.2) * 0.5;
             let w = project_radius(0.18, avg, camera.fov, height).max(0.5) * 2.0;
-            let c1 = lighting.shade(Vec3::new(0.0, 0.0, 1.0), avg, colors[a1.index], avg - 0.18, avg + 0.18);
-            let c2 = lighting.shade(Vec3::new(0.0, 0.0, 1.0), avg, colors[a2.index], avg - 0.18, avg + 0.18);
+            let c1 = lighting.shade(
+                Vec3::new(0.0, 0.0, 1.0),
+                avg,
+                colors[a1.index],
+                avg - 0.18,
+                avg + 0.18,
+            );
+            let c2 = lighting.shade(
+                Vec3::new(0.0, 0.0, 1.0),
+                avg,
+                colors[a2.index],
+                avg - 0.18,
+                avg + 0.18,
+            );
             let mid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5);
-            out.push(SvgPrim::Line { x1: p1.0, y1: p1.1, x2: mid.0, y2: mid.1, w, depth: avg, color: c1 });
-            out.push(SvgPrim::Line { x1: mid.0, y1: mid.1, x2: p2.0, y2: p2.1, w, depth: avg, color: c2 });
+            out.push(SvgPrim::Line {
+                x1: p1.0,
+                y1: p1.1,
+                x2: mid.0,
+                y2: mid.1,
+                w,
+                depth: avg,
+                color: c1,
+            });
+            out.push(SvgPrim::Line {
+                x1: mid.0,
+                y1: mid.1,
+                x2: p2.0,
+                y2: p2.1,
+                w,
+                depth: avg,
+                color: c2,
+            });
         }
     }
 }
@@ -364,7 +550,9 @@ pub fn export_mp4(
     for i in 0..frames {
         let mut fb = Framebuffer::new(sw, sh);
         fb.clear((0, 0, 0));
-        render_structure(structure, mode, color, &camera, &mut fb, &lighting, visibility, lod);
+        render_structure(
+            structure, mode, color, &camera, &mut fb, &lighting, visibility, lod,
+        );
         let rgba = downsample_rgba(&fb, width, height, ssaa);
         let p = tmp.join(format!("frame_{:06}.png", i));
         write_png(p.to_str().unwrap(), &rgba, width as u32, height as u32)?;

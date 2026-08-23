@@ -50,12 +50,18 @@ fn test_dihedral_angle_calculation() {
     let p4 = Vec3::new(1.0, 0.0, 0.0);
 
     let cis_angle = calculate_dihedral_angle(p1, p2, p3, p4);
-    assert!(cis_angle.abs() < 1e-4, "Cis dihedral should be ~0 deg, got {cis_angle}");
+    assert!(
+        cis_angle.abs() < 1e-4,
+        "Cis dihedral should be ~0 deg, got {cis_angle}"
+    );
 
     // Trans conformation: dihedral angle should be 180 deg
     let p4_trans = Vec3::new(-1.0, 0.0, 0.0);
     let trans_angle = calculate_dihedral_angle(p1, p2, p3, p4_trans);
-    assert!((trans_angle.abs() - 180.0).abs() < 1e-4, "Trans dihedral should be 180 deg, got {trans_angle}");
+    assert!(
+        (trans_angle.abs() - 180.0).abs() < 1e-4,
+        "Trans dihedral should be 180 deg, got {trans_angle}"
+    );
 }
 
 #[test]
@@ -92,13 +98,22 @@ fn test_selection_geometry_report() {
 
     sel.pick(1);
     let stat2 = sel.status(&structure);
-    assert!(stat2.contains("1.50 Å"), "2 atoms should show distance: {stat2}");
+    assert!(
+        stat2.contains("1.50 Å"),
+        "2 atoms should show distance: {stat2}"
+    );
 
     sel.pick(2);
     let stat3 = sel.status(&structure);
-    assert!(stat3.contains("Angle: 90.0°"), "3 atoms should show angle: {stat3}");
+    assert!(
+        stat3.contains("Angle: 90.0°"),
+        "3 atoms should show angle: {stat3}"
+    );
 
     sel.pick(3);
     let stat4 = sel.status(&structure);
-    assert!(stat4.contains("Dihedral:"), "4 atoms should show dihedral: {stat4}");
+    assert!(
+        stat4.contains("Dihedral:"),
+        "4 atoms should show dihedral: {stat4}"
+    );
 }

@@ -36,13 +36,19 @@ fn main() {
         for target_file in &cli.files[1..] {
             match load_structure(target_file) {
                 Ok(target_struct) => {
-                    if let Some(res) = termpdb::model::align::superimpose_structures(&mut structure, &target_struct) {
+                    if let Some(res) = termpdb::model::align::superimpose_structures(
+                        &mut structure,
+                        &target_struct,
+                    ) {
                         println!(
                             "Superposition ({} onto {}): {} aligned pairs, RMSD = {:.3} Å",
                             source, target_file, res.aligned_pairs, res.kabsch.rmsd
                         );
                     } else {
-                        eprintln!("Warning: could not superimpose {} onto {}", source, target_file);
+                        eprintln!(
+                            "Warning: could not superimpose {} onto {}",
+                            source, target_file
+                        );
                     }
                 }
                 Err(err) => eprintln!("Error loading target structure '{}': {}", target_file, err),
@@ -147,7 +153,9 @@ fn main() {
             visibility,
             cli.lod,
         );
-        if let Err(e) = termpdb::render::write_png(png_path, &rgba, cli.width as u32, cli.height as u32) {
+        if let Err(e) =
+            termpdb::render::write_png(png_path, &rgba, cli.width as u32, cli.height as u32)
+        {
             eprintln!("Error exporting PNG image to '{}': {}", png_path, e);
             std::process::exit(1);
         }

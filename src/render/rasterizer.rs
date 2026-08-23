@@ -26,7 +26,11 @@ pub fn draw_sphere(
     let (cx, cy, cz) = center_screen;
     let r = radius_screen;
 
-    if cx + r < 0.0 || cx - r >= buffer.width as f32 || cy + r < 0.0 || cy - r >= buffer.height as f32 {
+    if cx + r < 0.0
+        || cx - r >= buffer.width as f32
+        || cy + r < 0.0
+        || cy - r >= buffer.height as f32
+    {
         return;
     }
 
@@ -72,8 +76,7 @@ pub fn draw_sphere(
                     if z < depth_cur {
                         // Normal in camera view space (+X right, +Y up, +Z towards camera)
                         let normal = Vec3::new(dx * inv_r, -dy * inv_r, dz * inv_r);
-                        let lit_color =
-                            lighting.shade(normal, z, base_color, min_depth, max_depth);
+                        let lit_color = lighting.shade(normal, z, base_color, min_depth, max_depth);
                         unsafe {
                             *depth.add(idx) = z;
                             *pixels.add(idx) = lit_color;
@@ -100,7 +103,11 @@ pub fn draw_sphere_band(
     let r = radius_screen;
     let local_cy = cy - band.y_offset as f32;
 
-    if cx + r < 0.0 || cx - r >= band.width as f32 || local_cy + r < 0.0 || local_cy - r >= band.height as f32 {
+    if cx + r < 0.0
+        || cx - r >= band.width as f32
+        || local_cy + r < 0.0
+        || local_cy - r >= band.height as f32
+    {
         return;
     }
 
@@ -138,8 +145,7 @@ pub fn draw_sphere_band(
                     let z = cz - dz;
                     if z < depth_cur {
                         let normal = Vec3::new(dx * inv_r, -dy * inv_r, dz * inv_r);
-                        let lit_color =
-                            lighting.shade(normal, z, base_color, min_depth, max_depth);
+                        let lit_color = lighting.shade(normal, z, base_color, min_depth, max_depth);
                         unsafe {
                             *depth.add(idx) = z;
                             *pixels.add(idx) = lit_color;
@@ -266,7 +272,11 @@ pub fn draw_dashed_line_3d(
 
     for i in 0..=steps {
         let fi = i as f32;
-        let dist = if steps_f > 0.0 { (fi / steps_f) * len } else { 0.0 };
+        let dist = if steps_f > 0.0 {
+            (fi / steps_f) * len
+        } else {
+            0.0
+        };
         let phase = dist.rem_euclid(cycle);
 
         if phase < dash_px {
@@ -359,8 +369,7 @@ pub fn draw_cylinder(
                     let z = (z1 + t * dz_axis) - dz;
                     if z < depth_cur {
                         let normal = Vec3::new(dx * inv_r, -dy * inv_r, dz * inv_r);
-                        let lit_color =
-                            lighting.shade(normal, z, color, min_depth, max_depth);
+                        let lit_color = lighting.shade(normal, z, color, min_depth, max_depth);
                         unsafe {
                             *depth.add(idx) = z;
                             *pixels.add(idx) = lit_color;
@@ -430,8 +439,7 @@ pub fn draw_triangle_3d(
                 if w1 >= -1e-4 && w2 >= -1e-4 && w3 >= -1e-4 {
                     let z = w1 * v1.2 + w2 * v2.2 + w3 * v3.2;
                     if z < depth_cur {
-                        let lit_color =
-                            lighting.shade(normal, z, color, min_depth, max_depth);
+                        let lit_color = lighting.shade(normal, z, color, min_depth, max_depth);
                         unsafe {
                             *depth.add(idx) = z;
                             *pixels.add(idx) = lit_color;

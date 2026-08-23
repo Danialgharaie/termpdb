@@ -2,7 +2,9 @@ use clap::Parser;
 use termpdb::cli::Cli;
 use termpdb::math::Vec3;
 use termpdb::model::align::superimpose_structures;
-use termpdb::model::geometry::{calculate_bond_angle, calculate_dihedral_angle, classify_ramachandran};
+use termpdb::model::geometry::{
+    calculate_bond_angle, calculate_dihedral_angle, classify_ramachandran,
+};
 use termpdb::model::{Atom, Chain, Element, Residue, Structure};
 
 fn make_dummy_atom(idx: usize, pos: Vec3, name: &str) -> Atom {
