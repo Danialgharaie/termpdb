@@ -26,7 +26,7 @@ pub use widgets::{FooterWidget, HeaderWidget, HelpWidget, InfoWidget, ViewportWi
 
 use crate::error::Result;
 use crate::model::Structure;
-use crate::render::{ColorScheme, RenderMode};
+use crate::render::{ColorScheme, LodMode, RenderMode, Visibility};
 
 /// RAII Guard ensuring terminal raw mode and alternate screen are properly restored on exit/panic.
 struct TerminalCleanupGuard;
@@ -38,13 +38,18 @@ impl Drop for TerminalCleanupGuard {
     }
 }
 
-/// Runs the interactive TUI molecular viewer application until exit.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     structure: Structure,
     initial_mode: RenderMode,
     initial_color: ColorScheme,
     auto_spin: bool,
     spin_speed: f32,
+    visibility: Visibility,
+    lod: LodMode,
+    postprocess: crate::render::PostProcessConfig,
+    show_interactions: bool,
+    dof: Option<f32>,
 ) -> Result<()> {
     // Set panic hook to ensure terminal is cleaned up even if a panic occurs
     let original_hook = panic::take_hook();
@@ -63,8 +68,13 @@ pub fn run(
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let mut app =
-        App::new(structure, initial_mode, initial_color, auto_spin).with_spin_speed(spin_speed);
+    let mut app = App::new(structure, initial_mode, initial_color, auto_spin)
+        .with_spin_speed(spin_speed)
+        .with_visibility(visibility)
+        .with_lod(lod)
+        .with_postprocess(postprocess)
+        .with_interactions(show_interactions)
+        .with_dof(dof);
     let mut last_frame_time = Instant::now();
     let frame_target = Duration::from_micros(16_667); // ~60 FPS
 
@@ -74,20 +84,32 @@ pub fn run(
         last_frame_time = now;
 
         app.tick(dt);
-        terminal.draw(|f| app.render_ui(f))?;
 
-        let elapsed = now.elapsed();
-        let poll_timeout = frame_target.saturating_sub(elapsed);
-
-        if event::poll(poll_timeout)? {
-            while event::poll(Duration::ZERO)? {
-                match event::read()? {
-                    Event::Key(key) => app.handle_key(key),
-                    Event::Mouse(mouse) => app.handle_mouse(mouse),
-                    Event::Resize(_, _) => {}
-                    _ => {}
-                }
+        // Drain all pending input *before* drawing so a key/mouse event is
+        // reflected in this frame. Non-blocking: returns immediately when empty.
+        while event::poll(Duration::ZERO)? {
+            match event::read()? {
+                Event::Key(key) => app.handle_key(key),
+                Event::Mouse(mouse) => app.handle_mouse(mouse),
+                Event::Resize(_, _) => app.needs_redraw = true,
+                _ => {}
             }
+        }
+
+        // Only repaint when something actually changed (input, spin, FPS readout
+        // tick, resize). While idle the TUI does NOT redraw 60 fps, so CPU sits
+        // near 0 instead of constantly diffing an unchanged buffer.
+        if app.needs_redraw {
+            terminal.draw(|f| app.render_ui(f))?;
+            app.needs_redraw = false;
+        }
+
+        // Block for the remainder of the frame budget, or until input arrives.
+        // poll returns immediately when an event is ready, so input wakes the
+        // loop without waiting out the timeout.
+        let poll_timeout = frame_target.saturating_sub(now.elapsed());
+        if !poll_timeout.is_zero() {
+            let _ = event::poll(poll_timeout)?;
         }
     }
 

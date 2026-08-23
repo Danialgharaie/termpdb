@@ -41,6 +41,32 @@ impl Mat4 {
         self.m[col * 4 + row] = val;
     }
 
+    /// Row-major 3×3 rotation plus translation, stored column-major.
+    pub fn from_rotation_translation(rot: [[f32; 3]; 3], t: Vec3) -> Self {
+        let mut m = Self::identity().m;
+        m[0] = rot[0][0];
+        m[4] = rot[0][1];
+        m[8] = rot[0][2];
+        m[12] = t.x;
+        m[1] = rot[1][0];
+        m[5] = rot[1][1];
+        m[9] = rot[1][2];
+        m[13] = t.y;
+        m[2] = rot[2][0];
+        m[6] = rot[2][1];
+        m[10] = rot[2][2];
+        m[14] = t.z;
+        Self { m }
+    }
+
+    pub fn is_approx_identity(&self) -> bool {
+        let i = Self::identity();
+        self.m
+            .iter()
+            .zip(i.m.iter())
+            .all(|(a, b)| (a - b).abs() < 1e-4)
+    }
+
     pub fn from_translation(v: Vec3) -> Self {
         let mut m = Self::identity().m;
         m[12] = v.x;

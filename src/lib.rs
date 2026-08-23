@@ -9,6 +9,7 @@ pub mod math;
 pub mod model;
 pub mod parser;
 pub mod render;
+pub mod select;
 pub mod tui;
 
 // Public re-exports for library consumers
@@ -16,4 +17,7 @@ pub use cli::Cli;
 pub use error::{Result, TermPdbError};
 pub use model::Structure;
 pub use parser::load_structure;
-pub use render::{ColorScheme, Framebuffer, RenderMode, export_ansi};
+pub use render::{ColorScheme, Framebuffer, LodMode, RenderMode, Visibility, export_ansi};
+pub use select::{
+    AtomSpec, Selection, atom_distance, atom_label, distance_report, parse_atom_spec, resolve_atom,
+};

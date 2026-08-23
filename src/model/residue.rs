@@ -126,13 +126,17 @@ impl Residue {
         )
     }
 
-    /// Returns `true` if this residue is a solvent / water molecule.
-    pub fn is_water(&self) -> bool {
-        let trimmed = self.name.trim().to_ascii_uppercase();
+    /// Returns `true` if `name` is a solvent / water residue name.
+    pub fn name_is_water(name: &str) -> bool {
         matches!(
-            trimmed.as_str(),
+            name.trim().to_ascii_uppercase().as_str(),
             "HOH" | "WAT" | "H2O" | "DOD" | "TIP3" | "SOL"
         )
+    }
+
+    /// Returns `true` if this residue is a solvent / water molecule.
+    pub fn is_water(&self) -> bool {
+        Self::name_is_water(&self.name)
     }
 
     /// Returns the C-alpha (CA) atom reference if present in `atoms`.

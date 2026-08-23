@@ -68,6 +68,13 @@ impl Camera {
         self.orientation = (delta_q * self.orientation).normalize();
     }
 
+    /// Applies an absolute turntable rotation (radians) about the world Y axis,
+    /// used by the offline MP4 exporter to spin a full turn over N frames.
+    pub fn orbit_angle(&mut self, angle_rad: f32) {
+        let delta = Quat::from_axis_angle(Vec3::Y, angle_rad);
+        self.orientation = (delta * self.orientation).normalize();
+    }
+
     /// Pans the camera target along local camera right and up axes.
     pub fn pan(&mut self, dx: f32, dy: f32) {
         let right = self.orientation.rotate_vec3(Vec3::X);
@@ -128,6 +135,72 @@ impl Camera {
         let vp = proj.mul(&view);
 
         let m = &vp.m;
+        let x = m[0] * world_pos.x + m[4] * world_pos.y + m[8] * world_pos.z + m[12];
+        let y = m[1] * world_pos.x + m[5] * world_pos.y + m[9] * world_pos.z + m[13];
+        let w = m[3] * world_pos.x + m[7] * world_pos.y + m[11] * world_pos.z + m[15];
+
+        if w <= 0.0 || w.is_nan() {
+            return None;
+        }
+
+        let inv_w = 1.0 / w;
+        let ndc_x = x * inv_w;
+        let ndc_y = y * inv_w;
+
+        let screen_x = (ndc_x + 1.0) * 0.5 * (width as f32);
+        let screen_y = (1.0 - ndc_y) * 0.5 * (height as f32);
+
+        Some((screen_x, screen_y, view_depth))
+    }
+}
+
+/// Precomputed view and view-projection matrices for a single frame.
+///
+/// Build once per frame with Camera::matrices and feed to Camera::project so
+/// per-atom projection skips reconstructing the view/perspective matrices -- the
+/// dominant cost for large structures (look_at + perspective + a 4x4 mul were
+/// previously recomputed for every atom, every frame).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraMatrices {
+    /// Camera view (world -> camera-space) matrix.
+    pub view: Mat4,
+    /// Combined view-projection (world -> clip-space) matrix.
+    pub view_proj: Mat4,
+}
+
+impl Camera {
+    /// Builds the view and view-projection matrices once for a frame.
+    ///
+    /// Equivalent to Camera::view_matrix followed by Camera::proj_matrix,
+    /// constructed a single time instead of per projected point.
+    pub fn matrices(&self) -> CameraMatrices {
+        let view = self.view_matrix();
+        let view_proj = self.proj_matrix().mul(&view);
+        CameraMatrices { view, view_proj }
+    }
+
+    /// Fast per-point projection using precomputed CameraMatrices.
+    ///
+    /// Produces the same result as Camera::world_to_screen; only the redundant
+    /// per-call matrix construction is elided.
+    pub fn project(
+        &self,
+        mats: &CameraMatrices,
+        world_pos: Vec3,
+        width: usize,
+        height: usize,
+    ) -> Option<(f32, f32, f32)> {
+        // View-space depth (camera looks down -Z): needed for near/far clipping
+        // and as the z-buffer value written by the rasterizers. Inlined from the
+        // view matrix's third row to avoid a full point transform.
+        let v = &mats.view.m;
+        let view_depth = -(v[2] * world_pos.x + v[6] * world_pos.y + v[10] * world_pos.z + v[14]);
+
+        if view_depth <= 0.0 || view_depth < self.near || view_depth > self.far {
+            return None;
+        }
+
+        let m = &mats.view_proj.m;
         let x = m[0] * world_pos.x + m[4] * world_pos.y + m[8] * world_pos.z + m[12];
         let y = m[1] * world_pos.x + m[5] * world_pos.y + m[9] * world_pos.z + m[13];
         let w = m[3] * world_pos.x + m[7] * world_pos.y + m[11] * world_pos.z + m[15];

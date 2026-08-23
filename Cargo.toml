@@ -11,4 +11,28 @@ ureq = "2.12"
 flate2 = "1.0"
 anyhow = "1.0"
 thiserror = "2.0"
+png = "0.17"
+rayon = "1.10"
+
+# --- Build profiles ---
+
+# Ship a fast, small binary. A CPU software rasterizer benefits massively from
+# whole-program optimization: fat LTO + a single codegen unit lets the compiler
+# inline the hot per-pixel/per-atom loops across crate boundaries, panic = abort
+# drops unwinding overhead, and stripping shrinks the binary.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Keep cargo run usable for a CPU rasterizer. The local crate gets a little
+# optimization (opt-level 1) so debug builds are not glacial, while every
+# dependency is fully optimized (we never step into them with a debugger).
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
 

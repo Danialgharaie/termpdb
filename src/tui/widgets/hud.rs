@@ -7,17 +7,27 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 
 use crate::model::Structure;
-use crate::render::{ColorScheme, RenderMode};
+use crate::render::{ColorScheme, LodMode, RenderMode, Visibility};
 
 /// Header status widget displaying macromolecule identity and summary statistics.
 pub struct HeaderWidget<'a> {
     structure: &'a Structure,
+    selection: Option<&'a str>,
 }
 
 impl<'a> HeaderWidget<'a> {
     /// Creates a new `HeaderWidget` referencing the given structure.
     pub fn new(structure: &'a Structure) -> Self {
-        Self { structure }
+        Self {
+            structure,
+            selection: None,
+        }
+    }
+
+    /// Appends a selection / distance status string.
+    pub fn with_selection(mut self, selection: &'a str) -> Self {
+        self.selection = Some(selection);
+        self
     }
 }
 
@@ -60,6 +70,34 @@ impl Widget for HeaderWidget<'_> {
             ),
         ];
 
+        if self.structure.has_multiple_models() {
+            spans.push(Span::styled(
+                format!(
+                    " | Model {}/{}",
+                    self.structure.active_model_serial(),
+                    self.structure.max_model_serial()
+                ),
+                Style::default().fg(Color::Cyan),
+            ));
+        }
+
+        if self.structure.has_assemblies() {
+            let asm = self.structure.active_assembly_id().unwrap_or("ASU");
+            spans.push(Span::styled(
+                format!(" | Asm {asm}"),
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
+        if let Some(sel) = self.selection {
+            spans.push(Span::styled(
+                format!(" | {sel}"),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
         let resolution = self
             .structure
             .metadata
@@ -85,16 +123,30 @@ pub struct FooterWidget {
     color_scheme: ColorScheme,
     auto_spin: bool,
     fps: f32,
+    visibility: Visibility,
+    lod: LodMode,
+    atom_count: usize,
 }
 
 impl FooterWidget {
     /// Creates a new `FooterWidget` with rendering state and FPS.
-    pub fn new(mode: RenderMode, color_scheme: ColorScheme, auto_spin: bool, fps: f32) -> Self {
+    pub fn new(
+        mode: RenderMode,
+        color_scheme: ColorScheme,
+        auto_spin: bool,
+        fps: f32,
+        visibility: Visibility,
+        lod: LodMode,
+        atom_count: usize,
+    ) -> Self {
         Self {
             mode,
             color_scheme,
             auto_spin,
             fps,
+            visibility,
+            lod,
+            atom_count,
         }
     }
 }
@@ -127,6 +179,43 @@ impl Widget for FooterWidget {
             Span::styled(
                 format!("Spin: {spin_status} "),
                 Style::default().fg(spin_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" [o] ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!(
+                    "HOH:{} ",
+                    if self.visibility.show_waters {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                ),
+                Style::default().fg(if self.visibility.show_waters {
+                    Color::Green
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::styled(" [u] ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!(
+                    "H:{} ",
+                    if self.visibility.show_hydrogens {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                ),
+                Style::default().fg(if self.visibility.show_hydrogens {
+                    Color::Green
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::styled(" [l] ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("LOD:{} ", self.lod.hud_label(self.atom_count)),
+                Style::default().fg(Color::White),
             ),
             Span::styled(" [?] ", Style::default().fg(Color::Yellow)),
             Span::styled("Help ", Style::default().fg(Color::White)),

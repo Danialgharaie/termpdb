@@ -1,7 +1,12 @@
 use termpdb::math::Vec3;
 use termpdb::model::{Atom, Chain, Residue, SecondaryStructure, Structure, element_by_symbol};
 use termpdb::parser::parse_pdb;
-use termpdb::render::{Camera, ColorScheme, Framebuffer, Lighting, RenderMode, render_structure};
+use termpdb::render::representations::{
+    LOD_BACKBONE_ATOMS, LOD_CALPHA_ATOMS, LodLevel, atom_passes_lod,
+};
+use termpdb::render::{
+    Camera, ColorScheme, Framebuffer, Lighting, LodMode, RenderMode, Visibility, render_structure,
+};
 
 fn create_synthetic_protein() -> Structure {
     let mut structure = Structure::new("Synthetic Multi-Domain Protein");
@@ -144,11 +149,12 @@ fn count_drawn_pixels(buffer: &Framebuffer, bg: (u8, u8, u8)) -> usize {
 #[test]
 fn test_render_mode_enum_methods() {
     let modes = RenderMode::all();
-    assert_eq!(modes.len(), 4);
+    assert_eq!(modes.len(), 5);
     assert!(modes.contains(&RenderMode::Trace));
     assert!(modes.contains(&RenderMode::BallAndStick));
     assert!(modes.contains(&RenderMode::Ribbon));
     assert!(modes.contains(&RenderMode::Vdw));
+    assert!(modes.contains(&RenderMode::Wireframe));
 
     for mode in modes {
         assert!(!mode.name().is_empty());
@@ -180,6 +186,8 @@ fn test_render_empty_structure() {
             &camera,
             &mut buffer,
             &lighting,
+            Visibility::ALL,
+            LodMode::Full,
         );
         assert_eq!(count_drawn_pixels(&buffer, bg), 0);
     }
@@ -205,6 +213,8 @@ fn test_render_trace_mode() {
         &camera,
         &mut buffer,
         &lighting,
+        Visibility::ALL,
+        LodMode::Full,
     );
 
     let drawn = count_drawn_pixels(&buffer, bg);
@@ -235,6 +245,8 @@ fn test_render_ball_and_stick_mode() {
         &camera,
         &mut buffer,
         &lighting,
+        Visibility::ALL,
+        LodMode::Full,
     );
 
     let drawn = count_drawn_pixels(&buffer, bg);
@@ -265,6 +277,8 @@ fn test_render_ribbon_mode() {
         &camera,
         &mut buffer,
         &lighting,
+        Visibility::ALL,
+        LodMode::Full,
     );
 
     let drawn = count_drawn_pixels(&buffer, bg);
@@ -297,6 +311,8 @@ fn test_render_vdw_mode() {
         &camera,
         &mut buffer_vdw,
         &lighting,
+        Visibility::ALL,
+        LodMode::Full,
     );
 
     render_structure(
@@ -306,6 +322,8 @@ fn test_render_vdw_mode() {
         &camera,
         &mut buffer_bas,
         &lighting,
+        Visibility::ALL,
+        LodMode::Full,
     );
 
     let drawn_vdw = count_drawn_pixels(&buffer_vdw, bg);
@@ -341,7 +359,16 @@ fn test_render_all_modes_and_all_color_schemes() {
             let mut buffer = Framebuffer::new(60, 36);
             buffer.clear(bg);
 
-            render_structure(&structure, mode, scheme, &camera, &mut buffer, &lighting);
+            render_structure(
+                &structure,
+                mode,
+                scheme,
+                &camera,
+                &mut buffer,
+                &lighting,
+                Visibility::ALL,
+                LodMode::Full,
+            );
 
             let drawn = count_drawn_pixels(&buffer, bg);
             assert!(
@@ -397,6 +424,8 @@ END
             &camera,
             &mut buffer,
             &lighting,
+            Visibility::ALL,
+            LodMode::Full,
         );
 
         let drawn = count_drawn_pixels(&buffer, (0, 0, 0));
@@ -406,4 +435,259 @@ END
             mode
         );
     }
+}
+
+fn visibility_fixture() -> Structure {
+    let mut structure = Structure::new("vis");
+    let mut chain = Chain::new("A");
+    let mut protein = Residue::new(1, "ALA", "A");
+    let mut water = Residue::new(2, "HOH", "A");
+
+    let ca = structure.add_atom(Atom::new(
+        0,
+        1,
+        "CA",
+        element_by_symbol("C"),
+        Vec3::new(0.0, 0.0, 0.0),
+        10.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+    let h = structure.add_atom(Atom::new(
+        0,
+        2,
+        "H",
+        element_by_symbol("H"),
+        Vec3::new(8.0, 0.0, 0.0),
+        10.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+    let o = structure.add_atom(Atom::new(
+        0,
+        3,
+        "O",
+        element_by_symbol("O"),
+        Vec3::new(12.0, 0.0, 0.0),
+        10.0,
+        "HOH",
+        2,
+        "A",
+        true,
+    ));
+
+    protein.atom_indices.extend([ca, h]);
+    water.atom_indices.push(o);
+    chain.residues.push(protein);
+    chain.residues.push(water);
+    structure.add_chain(chain);
+    structure
+}
+
+#[test]
+fn test_hiding_waters_draws_fewer_vdw_pixels_than_showing_all() {
+    let structure = visibility_fixture();
+    let mut camera = Camera::new();
+    camera.fit_structure(
+        structure.center_of_mass(),
+        structure.bounding_sphere_radius(),
+    );
+    let lighting = Lighting::default();
+
+    let mut all_buf = Framebuffer::new(80, 48);
+    all_buf.clear((0, 0, 0));
+    render_structure(
+        &structure,
+        RenderMode::Vdw,
+        ColorScheme::Cpk,
+        &camera,
+        &mut all_buf,
+        &lighting,
+        Visibility::ALL,
+        LodMode::Full,
+    );
+
+    let mut hidden_buf = Framebuffer::new(80, 48);
+    hidden_buf.clear((0, 0, 0));
+    render_structure(
+        &structure,
+        RenderMode::Vdw,
+        ColorScheme::Cpk,
+        &camera,
+        &mut hidden_buf,
+        &lighting,
+        Visibility::default(),
+        LodMode::Full,
+    );
+
+    let all = count_drawn_pixels(&all_buf, (0, 0, 0));
+    let hidden = count_drawn_pixels(&hidden_buf, (0, 0, 0));
+    assert!(all > 0);
+    assert!(
+        hidden < all,
+        "default visibility should hide waters: all={all} hidden={hidden}"
+    );
+}
+
+#[test]
+fn test_hiding_hydrogens_draws_fewer_vdw_pixels() {
+    let structure = visibility_fixture();
+    let mut camera = Camera::new();
+    camera.fit_structure(
+        structure.center_of_mass(),
+        structure.bounding_sphere_radius(),
+    );
+    let lighting = Lighting::default();
+
+    let mut with_h = Framebuffer::new(80, 48);
+    with_h.clear((0, 0, 0));
+    render_structure(
+        &structure,
+        RenderMode::Vdw,
+        ColorScheme::Cpk,
+        &camera,
+        &mut with_h,
+        &lighting,
+        Visibility {
+            show_waters: false,
+            show_hydrogens: true,
+        },
+        LodMode::Full,
+    );
+
+    let mut no_h = Framebuffer::new(80, 48);
+    no_h.clear((0, 0, 0));
+    render_structure(
+        &structure,
+        RenderMode::Vdw,
+        ColorScheme::Cpk,
+        &camera,
+        &mut no_h,
+        &lighting,
+        Visibility {
+            show_waters: false,
+            show_hydrogens: false,
+        },
+        LodMode::Full,
+    );
+
+    let a = count_drawn_pixels(&with_h, (0, 0, 0));
+    let b = count_drawn_pixels(&no_h, (0, 0, 0));
+    assert!(
+        b < a,
+        "hiding hydrogens should draw fewer pixels: with_h={a} no_h={b}"
+    );
+}
+
+#[test]
+fn test_lod_auto_thresholds() {
+    assert_eq!(LodMode::Auto.resolve(0), LodLevel::Full);
+    assert_eq!(
+        LodMode::Auto.resolve(LOD_BACKBONE_ATOMS - 1),
+        LodLevel::Full
+    );
+    assert_eq!(
+        LodMode::Auto.resolve(LOD_BACKBONE_ATOMS),
+        LodLevel::Backbone
+    );
+    assert_eq!(LodMode::Auto.resolve(LOD_CALPHA_ATOMS), LodLevel::CAlpha);
+    assert_eq!(LodMode::Full.resolve(1_000_000), LodLevel::Full);
+    assert_eq!(LodMode::Auto.next(), LodMode::Full);
+    assert_eq!(LodMode::CAlpha.next(), LodMode::Auto);
+}
+
+#[test]
+fn test_atom_passes_lod_keeps_backbone_and_ligands() {
+    let c = element_by_symbol("C");
+    let zn = element_by_symbol("Zn");
+    let ca = Atom::new(0, 1, "CA", c, Vec3::ZERO, 0.0, "ALA", 1, "A", false);
+    let cb = Atom::new(1, 2, "CB", c, Vec3::ZERO, 0.0, "ALA", 1, "A", false);
+    let ligand = Atom::new(2, 3, "ZN", zn, Vec3::ZERO, 0.0, "ZN", 99, "A", true);
+    let mut ala = Residue::new(1, "ALA", "A");
+    ala.atom_indices = vec![0, 1];
+    let mut zn_res = Residue::new(99, "ZN", "A");
+    zn_res.atom_indices = vec![2];
+
+    assert!(atom_passes_lod(&ca, Some(&ala), LodLevel::Full));
+    assert!(atom_passes_lod(&cb, Some(&ala), LodLevel::Full));
+    assert!(atom_passes_lod(&ca, Some(&ala), LodLevel::Backbone));
+    assert!(!atom_passes_lod(&cb, Some(&ala), LodLevel::Backbone));
+    assert!(atom_passes_lod(&ligand, Some(&zn_res), LodLevel::Backbone));
+    assert!(atom_passes_lod(&ca, Some(&ala), LodLevel::CAlpha));
+    assert!(!atom_passes_lod(&cb, Some(&ala), LodLevel::CAlpha));
+    assert!(atom_passes_lod(&ligand, Some(&zn_res), LodLevel::CAlpha));
+}
+
+#[test]
+fn test_lod_backbone_draws_fewer_vdw_pixels_than_full() {
+    let mut structure = Structure::new("lod");
+    let mut chain = Chain::new("A");
+    let mut res = Residue::new(1, "ALA", "A");
+    let c = element_by_symbol("C");
+    let ca = structure.add_atom(Atom::new(
+        0,
+        1,
+        "CA",
+        c,
+        Vec3::new(0.0, 0.0, 0.0),
+        10.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+    let cb = structure.add_atom(Atom::new(
+        0,
+        2,
+        "CB",
+        c,
+        Vec3::new(8.0, 0.0, 0.0),
+        10.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+    res.atom_indices.extend([ca, cb]);
+    chain.residues.push(res);
+    structure.add_chain(chain);
+
+    let mut camera = Camera::new();
+    camera.fit_structure(
+        structure.center_of_mass(),
+        structure.bounding_sphere_radius(),
+    );
+    let lighting = Lighting::default();
+
+    let mut full = Framebuffer::new(80, 48);
+    full.clear((0, 0, 0));
+    render_structure(
+        &structure,
+        RenderMode::Vdw,
+        ColorScheme::Cpk,
+        &camera,
+        &mut full,
+        &lighting,
+        Visibility::ALL,
+        LodMode::Full,
+    );
+    let mut bb = Framebuffer::new(80, 48);
+    bb.clear((0, 0, 0));
+    render_structure(
+        &structure,
+        RenderMode::Vdw,
+        ColorScheme::Cpk,
+        &camera,
+        &mut bb,
+        &lighting,
+        Visibility::ALL,
+        LodMode::Backbone,
+    );
+    let a = count_drawn_pixels(&full, (0, 0, 0));
+    let b = count_drawn_pixels(&bb, (0, 0, 0));
+    assert!(b < a, "backbone LOD should skip CB: full={a} bb={b}");
 }

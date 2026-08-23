@@ -67,12 +67,12 @@ impl Widget for HelpWidget {
             )]),
             Line::from(vec![
                 Span::styled(
-                    "    1 / 2 / 3 / 4",
+                    "    1 / 2 / 3 / 4 / 5",
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw("    Trace / Ball & Stick / Ribbon / VDW"),
+                Span::raw("  Trace / Ball & Stick / Ribbon / VDW / Wireframe"),
             ]),
             Line::from(vec![
                 Span::styled(
@@ -85,7 +85,7 @@ impl Widget for HelpWidget {
             ]),
             Line::from(""),
             Line::from(vec![Span::styled(
-                "  Color Schemes:",
+                "  Color Schemes & Visuals:",
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -97,7 +97,43 @@ impl Widget for HelpWidget {
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::raw("    Next / Prev Color (CPK, Rainbow, Chain, SS, B-Factor, Hydro)"),
+                Span::raw("    Cycle 12 Color Schemes (CPK, Rainbow, Chain, SS, pLDDT, Themes)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    O            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle Silhouette Depth Outlines"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    k            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle Screen-Space Ambient Occlusion (SSAO)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    e            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle Non-Covalent Interactions (H-Bonds & Disulfides)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    f            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle Depth-of-Field (DoF) Focal Cueing"),
             ]),
             Line::from(""),
             Line::from(vec![Span::styled(
@@ -174,6 +210,85 @@ impl Widget for HelpWidget {
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             )]),
+            Line::from(vec![Span::styled(
+                "  Selection & Measure:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(vec![
+                Span::styled(
+                    "    /            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Pick atom by id (A:12 or A:12:CA), Enter to confirm"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    Click        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Pick nearest atom (drag still orbits)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    x            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Clear selection (2: dist, 3: angle, 4: dihedral/Ramachandran)"),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    "    n / p        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Next / Previous model (wrap)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    l / L        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    LOD Auto / Full / Backbone / CA (Auto: 25k / 80k atoms)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    b / B        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Next / Previous biological assembly (ASU ↔ copies)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    o            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle waters / solvent (hidden by default)"),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "    u            ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle hydrogens"),
+            ]),
             Line::from(vec![
                 Span::styled(
                     "    i            ",

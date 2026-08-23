@@ -169,10 +169,12 @@ fn test_app_mode_switching() {
     app.next_mode();
     assert_eq!(app.render_mode, RenderMode::Vdw);
     app.next_mode();
+    assert_eq!(app.render_mode, RenderMode::Wireframe);
+    app.next_mode();
     assert_eq!(app.render_mode, RenderMode::Trace);
 
     app.prev_mode();
-    assert_eq!(app.render_mode, RenderMode::Vdw);
+    assert_eq!(app.render_mode, RenderMode::Wireframe);
 
     app.set_mode(RenderMode::Ribbon);
     assert_eq!(app.render_mode, RenderMode::Ribbon);
@@ -334,6 +336,46 @@ fn test_key_event_mapping() {
         handle_key_event(make_key(KeyCode::Char('i'), KeyModifiers::NONE)),
         AppAction::ToggleInfo
     );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('n'), KeyModifiers::NONE)),
+        AppAction::NextModel
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('p'), KeyModifiers::NONE)),
+        AppAction::PrevModel
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('o'), KeyModifiers::NONE)),
+        AppAction::ToggleWaters
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('u'), KeyModifiers::NONE)),
+        AppAction::ToggleHydrogens
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('/'), KeyModifiers::NONE)),
+        AppAction::StartPickPrompt
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('x'), KeyModifiers::NONE)),
+        AppAction::ClearSelection
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('b'), KeyModifiers::NONE)),
+        AppAction::NextAssembly
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('B'), KeyModifiers::SHIFT)),
+        AppAction::PrevAssembly
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('l'), KeyModifiers::NONE)),
+        AppAction::NextLod
+    );
+    assert_eq!(
+        handle_key_event(make_key(KeyCode::Char('L'), KeyModifiers::SHIFT)),
+        AppAction::PrevLod
+    );
 }
 
 #[test]
@@ -407,6 +449,25 @@ fn test_mouse_event_mapping() {
         handle_mouse_event(scroll_down, &mut mouse_state),
         AppAction::Zoom { delta: -1.0 }
     );
+
+    let mut click_state = MouseState::default();
+    let down = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: 20,
+        row: 10,
+        modifiers: KeyModifiers::NONE,
+    };
+    assert_eq!(handle_mouse_event(down, &mut click_state), AppAction::None);
+    let up = MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: 20,
+        row: 10,
+        modifiers: KeyModifiers::NONE,
+    };
+    assert_eq!(
+        handle_mouse_event(up, &mut click_state),
+        AppAction::PickAt { col: 20, row: 10 }
+    );
 }
 
 #[test]
@@ -446,7 +507,15 @@ fn test_hud_footer_widget_render() {
     let area = Rect::new(0, 0, 80, 1);
     let mut buffer = Buffer::empty(area);
 
-    let widget = FooterWidget::new(RenderMode::Ribbon, ColorScheme::Cpk, true, 60.0);
+    let widget = FooterWidget::new(
+        RenderMode::Ribbon,
+        ColorScheme::Cpk,
+        true,
+        60.0,
+        termpdb::render::Visibility::default(),
+        termpdb::render::LodMode::Auto,
+        10,
+    );
     ratatui::widgets::Widget::render(widget, area, &mut buffer);
 
     let text: String = (0..80).map(|x| buffer[(x, 0)].symbol()).collect();
@@ -521,4 +590,150 @@ fn test_app_render_ui_integration() {
         app.render_ui(f);
     });
     assert!(res_info.is_ok());
+}
+
+#[test]
+fn test_app_model_step_keeps_camera() {
+    let pdb = r#"MODEL        1
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 10.00           C
+ENDMDL
+MODEL        2
+ATOM      1  CA  ALA A   1       8.000   0.000   0.000  1.00 10.00           C
+ENDMDL
+END
+"#;
+    let structure = termpdb::parser::parse_pdb(pdb).unwrap();
+    let mut app = App::new(structure, RenderMode::Trace, ColorScheme::Cpk, false);
+
+    app.camera.orbit(12.0, -3.0);
+    app.camera.zoom(1.0);
+    let orientation = app.camera.orientation;
+    let distance = app.camera.distance;
+    let target = app.camera.target;
+
+    app.apply_action(AppAction::NextModel);
+    assert_eq!(app.structure.active_model_serial(), 2);
+    assert!((app.structure.atoms()[0].pos.x - 8.0).abs() < 1e-4);
+    assert_eq!(app.camera.orientation, orientation);
+    assert_eq!(app.camera.distance, distance);
+    assert_eq!(app.camera.target, target);
+
+    app.apply_action(AppAction::PrevModel);
+    assert_eq!(app.structure.active_model_serial(), 1);
+    assert_eq!(app.camera.orientation, orientation);
+}
+
+#[test]
+fn test_header_shows_model_only_when_multiple() {
+    let single = create_test_structure();
+    let area = Rect::new(0, 0, 100, 1);
+    let mut buffer = Buffer::empty(area);
+    ratatui::widgets::Widget::render(HeaderWidget::new(&single), area, &mut buffer);
+    let text: String = (0..100).map(|x| buffer[(x, 0)].symbol()).collect();
+    assert!(
+        !text.contains("Model"),
+        "single-model HUD must not show Model: {text}"
+    );
+
+    let pdb = r#"MODEL        1
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 10.00           C
+ENDMDL
+MODEL        2
+ATOM      1  CA  ALA A   1       8.000   0.000   0.000  1.00 10.00           C
+ENDMDL
+END
+"#;
+    let multi = termpdb::parser::parse_pdb(pdb).unwrap();
+    let mut buffer = Buffer::empty(area);
+    ratatui::widgets::Widget::render(HeaderWidget::new(&multi), area, &mut buffer);
+    let text: String = (0..100).map(|x| buffer[(x, 0)].symbol()).collect();
+    assert!(text.contains("Model 1/2"), "expected Model 1/2 in {text}");
+}
+
+#[test]
+fn test_app_visibility_defaults_and_toggles() {
+    let structure = create_test_structure();
+    let mut app = App::new(structure, RenderMode::Ribbon, ColorScheme::Cpk, false);
+    assert!(!app.visibility.show_waters);
+    assert!(app.visibility.show_hydrogens);
+
+    app.apply_action(AppAction::ToggleWaters);
+    assert!(app.visibility.show_waters);
+    app.apply_action(AppAction::ToggleWaters);
+    assert!(!app.visibility.show_waters);
+
+    app.apply_action(AppAction::ToggleHydrogens);
+    assert!(!app.visibility.show_hydrogens);
+    app.apply_action(AppAction::ToggleHydrogens);
+    assert!(app.visibility.show_hydrogens);
+
+    assert_eq!(app.lod, termpdb::render::LodMode::Auto);
+    app.apply_action(AppAction::NextLod);
+    assert_eq!(app.lod, termpdb::render::LodMode::Full);
+    app.apply_action(AppAction::PrevLod);
+    assert_eq!(app.lod, termpdb::render::LodMode::Auto);
+}
+
+#[test]
+fn test_app_selection_and_pick_prompt() {
+    let mut app = App::new(
+        create_test_structure(),
+        RenderMode::Ribbon,
+        ColorScheme::Cpk,
+        false,
+    );
+    assert!(app.selection.is_empty());
+
+    app.apply_action(AppAction::PickAtom(0));
+    app.apply_action(AppAction::PickAtom(1));
+    let line = app.selection.status_line(&app.structure).unwrap();
+    assert!(line.contains('Å'), "{line}");
+
+    app.apply_action(AppAction::ClearSelection);
+    assert!(app.selection.is_empty());
+
+    let make_key = |code: KeyCode| KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+    app.handle_key(make_key(KeyCode::Char('/')));
+    assert_eq!(app.pick_prompt.as_deref(), Some(""));
+    app.handle_key(make_key(KeyCode::Char('A')));
+    app.handle_key(make_key(KeyCode::Char(':')));
+    app.handle_key(make_key(KeyCode::Char('1')));
+    app.handle_key(make_key(KeyCode::Enter));
+    assert!(app.pick_prompt.is_none());
+    assert_eq!(app.selection.atoms().len(), 1);
+    assert_eq!(app.structure.atoms()[app.selection.atoms()[0]].res_seq, 1);
+
+    app.handle_key(make_key(KeyCode::Char('/')));
+    app.handle_key(make_key(KeyCode::Esc));
+    assert!(app.pick_prompt.is_none());
+}
+
+#[test]
+fn test_app_assembly_cycle_clears_selection_and_fits() {
+    let pdb = r#"REMARK 350 BIOMOLECULE: 1
+REMARK 350 APPLY THE FOLLOWING TO CHAINS: A
+REMARK 350   BIOMT1   1  1.000000  0.000000  0.000000        0.00000
+REMARK 350   BIOMT2   1  0.000000  1.000000  0.000000        0.00000
+REMARK 350   BIOMT3   1  0.000000  0.000000  1.000000        0.00000
+REMARK 350   BIOMT1   2  1.000000  0.000000  0.000000       10.00000
+REMARK 350   BIOMT2   2  0.000000  1.000000  0.000000        0.00000
+REMARK 350   BIOMT3   2  0.000000  0.000000  1.000000        0.00000
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 10.00           C
+END
+"#;
+    let structure = termpdb::parser::parse_pdb(pdb).unwrap();
+    let mut app = App::new(structure, RenderMode::Trace, ColorScheme::Cpk, false);
+    app.apply_action(AppAction::PickAtom(0));
+    assert!(!app.selection.is_empty());
+    let asu_distance = app.camera.distance;
+    app.apply_action(AppAction::NextAssembly);
+    assert_eq!(app.structure.active_assembly_id(), Some("1"));
+    assert!(app.selection.is_empty());
+    assert_eq!(app.structure.atom_count(), 2);
+    assert!(app.camera.distance >= asu_distance);
 }

@@ -1,7 +1,8 @@
 use clap::Parser;
 use termpdb::cli::Cli;
 use termpdb::parser::{parse_cif, parse_pdb};
-use termpdb::render::{ColorScheme, RenderMode, export_ansi};
+use termpdb::render::{ColorScheme, LodMode, RenderMode, export_ansi};
+use termpdb::select::distance_report;
 
 const SAMPLE_PDB_1CRN: &str = r#"HEADER    HYDROLASE                               02-AUG-81   1CRN
 TITLE     WATER STRUCTURE OF A HYDROPHOBIC PROTEIN AT ATOMIC RESOLUTION.
@@ -156,7 +157,7 @@ fn test_all_color_schemes_ansi_export() {
 #[test]
 fn test_cli_argument_parsing_defaults() {
     let cli = Cli::try_parse_from(["termpdb", "1crn"]).expect("CLI parsing failed");
-    assert_eq!(cli.source.as_deref(), Some("1crn"));
+    assert_eq!(cli.source(), Some("1crn"));
     assert_eq!(cli.mode, RenderMode::Ribbon);
     assert_eq!(cli.color, ColorScheme::Rainbow);
     assert!(!cli.spin);
@@ -164,6 +165,12 @@ fn test_cli_argument_parsing_defaults() {
     assert_eq!(cli.export_ansi, None);
     assert_eq!(cli.width, 80);
     assert_eq!(cli.height, 40);
+    assert_eq!(cli.model, None);
+    assert!(!cli.show_waters);
+    assert!(!cli.hide_hydrogens);
+    assert_eq!(cli.dist, None);
+    assert_eq!(cli.assembly, None);
+    assert_eq!(cli.lod, LodMode::Auto);
 }
 
 #[test]
@@ -187,7 +194,7 @@ fn test_cli_argument_parsing_flags_and_aliases() {
     ])
     .expect("CLI parsing with flags failed");
 
-    assert_eq!(cli.source.as_deref(), Some("sample.pdb"));
+    assert_eq!(cli.source(), Some("sample.pdb"));
     assert_eq!(cli.mode, RenderMode::Trace);
     assert_eq!(cli.color, ColorScheme::SecondaryStructure);
     assert!(cli.spin);
@@ -221,13 +228,32 @@ fn test_cli_argument_parsing_flags_and_aliases() {
     // Test Hydrophobicity
     let cli_hyd = Cli::try_parse_from(["termpdb", "1crn", "-c", "hydrophobicity"]).unwrap();
     assert_eq!(cli_hyd.color, ColorScheme::Hydrophobicity);
+
+    let cli_model = Cli::try_parse_from(["termpdb", "1ens.pdb", "--model", "5"]).unwrap();
+    assert_eq!(cli_model.model, Some(5));
+
+    let cli_vis =
+        Cli::try_parse_from(["termpdb", "1crn", "--show-waters", "--hide-hydrogens"]).unwrap();
+    assert!(cli_vis.show_waters);
+    assert!(cli_vis.hide_hydrogens);
+
+    let cli_dist = Cli::try_parse_from(["termpdb", "1crn", "--dist", "A:1:CA,A:2:CA"]).unwrap();
+    assert_eq!(cli_dist.dist.as_deref(), Some("A:1:CA,A:2:CA"));
+
+    let cli_asm = Cli::try_parse_from(["termpdb", "1dim.pdb", "--assembly", "1"]).unwrap();
+    assert_eq!(cli_asm.assembly.as_deref(), Some("1"));
+
+    let cli_lod = Cli::try_parse_from(["termpdb", "1crn", "--lod", "ca"]).unwrap();
+    assert_eq!(cli_lod.lod, LodMode::CAlpha);
+    let cli_bb = Cli::try_parse_from(["termpdb", "1crn", "--lod", "backbone"]).unwrap();
+    assert_eq!(cli_bb.lod, LodMode::Backbone);
 }
 
 #[test]
 fn test_cli_no_arguments() {
     let cli = Cli::try_parse_from(["termpdb"])
         .expect("CLI parsing without arguments should succeed with None source");
-    assert_eq!(cli.source, None);
+    assert_eq!(cli.source(), None);
 }
 
 #[test]
@@ -261,4 +287,34 @@ fn test_export_ansi_file_roundtrip() {
 
     assert_eq!(ansi, read_back);
     assert_eq!(read_back.lines().count(), 20);
+}
+
+#[test]
+fn test_export_ansi_uses_active_model() {
+    let pdb = r#"MODEL        1
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 10.00           C
+ATOM      2  CA  ALA A   2       3.800   0.000   0.000  1.00 10.00           C
+ATOM      3  CA  ALA A   3       7.600   0.000   0.000  1.00 10.00           C
+ENDMDL
+MODEL        2
+ATOM      1  CA  ALA A   1      40.000  40.000  40.000  1.00 10.00           C
+ENDMDL
+END
+"#;
+    let mut structure = parse_pdb(pdb).unwrap();
+    let ansi_m1 = export_ansi(&structure, RenderMode::Trace, ColorScheme::Cpk, 40, 20);
+    structure.set_active_model(2).unwrap();
+    let ansi_m2 = export_ansi(&structure, RenderMode::Trace, ColorScheme::Cpk, 40, 20);
+    assert_ne!(ansi_m1, ansi_m2);
+    assert!(ansi_m1.contains('▀'));
+    assert!(ansi_m2.contains('▀'));
+}
+
+#[test]
+fn test_distance_report_on_sample_pdb() {
+    let structure = parse_pdb(SAMPLE_PDB_1CRN).unwrap();
+    let report = distance_report(&structure, "A:1:CA,A:2:CA").unwrap();
+    assert!(report.starts_with("A:1:CA  A:2:CA  "), "{report}");
+    let d: f32 = report.split_whitespace().last().unwrap().parse().unwrap();
+    assert!(d > 3.0 && d < 5.0, "CA-CA should be peptide-like, got {d}");
 }

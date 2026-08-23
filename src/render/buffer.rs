@@ -135,16 +135,37 @@ impl Framebuffer {
         }
 
         use std::fmt::Write;
-        let mut out = String::with_capacity(term_rows * self.width * 35);
+        // Worst case is roughly two SGR sequences (~20 bytes) plus one char per
+        // cell; run-length encoding makes the common case (large uniform regions
+        // such as the background and solid sphere interiors) far smaller.
+        let mut out = String::with_capacity(term_rows * self.width * 24);
 
         for r in 0..term_rows {
+            // Each row is terminated by an SGR reset, so the run state starts fresh.
+            let mut run_fg: Option<PixelColor> = None;
+            let mut run_bg: Option<Option<PixelColor>> = None;
+
             for c in 0..self.width {
                 let (ch, fg, bg) = self.cell_at(c, r);
-                let _ = write!(out, "\x1b[38;2;{};{};{}m", fg.0, fg.1, fg.2);
-                if let Some(bg) = bg {
-                    let _ = write!(out, "\x1b[48;2;{};{};{}m", bg.0, bg.1, bg.2);
-                } else {
-                    out.push_str("\x1b[49m");
+
+                // Only re-emit a color code when it changes from the previous
+                // cell in this row, instead of per cell.
+                if run_fg != Some(fg) {
+                    let _ = write!(out, "\x1b[38;2;{};{};{}m", fg.0, fg.1, fg.2);
+                    run_fg = Some(fg);
+                }
+                if run_bg != Some(bg) {
+                    match bg {
+                        Some(bg_color) => {
+                            let _ = write!(
+                                out,
+                                "\x1b[48;2;{};{};{}m",
+                                bg_color.0, bg_color.1, bg_color.2
+                            );
+                        }
+                        None => out.push_str("\x1b[49m"),
+                    }
+                    run_bg = Some(bg);
                 }
                 out.push(ch);
             }
@@ -152,5 +173,67 @@ impl Framebuffer {
         }
 
         out
+    }
+
+    /// Splits the framebuffer into horizontal row bands of `band_height` rows each for parallel processing.
+    pub fn par_bands_mut(&mut self, band_height: usize) -> Vec<FramebufferBand<'_>> {
+        if self.width == 0 || self.height == 0 || band_height == 0 {
+            return Vec::new();
+        }
+
+        let width = self.width;
+        let band_size = width * band_height;
+
+        let pixel_chunks: Vec<&mut [PixelColor]> = self.pixels.chunks_mut(band_size).collect();
+        let depth_chunks: Vec<&mut [f32]> = self.depth.chunks_mut(band_size).collect();
+
+        pixel_chunks
+            .into_iter()
+            .zip(depth_chunks)
+            .enumerate()
+            .map(|(i, (pixels, depth))| {
+                let actual_height = pixels.len() / width;
+                FramebufferBand {
+                    width,
+                    height: actual_height,
+                    y_offset: i * band_height,
+                    pixels,
+                    depth,
+                }
+            })
+            .collect()
+    }
+}
+
+/// A horizontal slice/band of a Framebuffer for parallel multi-threaded rendering.
+pub struct FramebufferBand<'a> {
+    pub width: usize,
+    pub height: usize,
+    pub y_offset: usize,
+    pub pixels: &'a mut [PixelColor],
+    pub depth: &'a mut [f32],
+}
+
+impl<'a> FramebufferBand<'a> {
+    /// Sets a pixel at local coordinates `(local_x, local_y)` relative to this band.
+    #[inline]
+    pub fn set_pixel(&mut self, local_x: i32, local_y: i32, z: f32, color: PixelColor) -> bool {
+        if local_x < 0 || local_y < 0 {
+            return false;
+        }
+        let ux = local_x as usize;
+        let uy = local_y as usize;
+        if ux >= self.width || uy >= self.height {
+            return false;
+        }
+
+        let idx = uy * self.width + ux;
+        if z < self.depth[idx] {
+            self.depth[idx] = z;
+            self.pixels[idx] = color;
+            true
+        } else {
+            false
+        }
     }
 }

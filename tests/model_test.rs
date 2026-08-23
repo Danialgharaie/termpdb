@@ -1,7 +1,7 @@
 use termpdb::math::Vec3;
 use termpdb::model::{
-    Atom, Bond, BondDetector, BondOrder, Chain, Element, Residue, SecondaryStructure, Structure,
-    element_by_atomic_number, element_by_symbol,
+    Atom, Bond, BondDetector, BondOrder, Chain, Element, Model, Residue, SecondaryStructure,
+    Structure, element_by_atomic_number, element_by_symbol,
 };
 
 #[test]
@@ -568,7 +568,7 @@ fn test_structure_build_bonds_and_counts() {
     assert_eq!(structure.atom_count(), 3);
     assert_eq!(structure.chain_count(), 1);
     assert_eq!(structure.residue_count(), 2);
-    assert_eq!(structure.bonds.len(), 2);
+    assert_eq!(structure.bonds().len(), 2);
     assert_eq!(structure.ca_atoms().len(), 1);
 }
 
@@ -662,4 +662,64 @@ fn test_element_default() {
     let def = Element::default();
     assert_eq!(def.atomic_number, 0);
     assert_eq!(def.symbol, "X");
+}
+
+#[test]
+fn test_structure_set_models_activates_lowest_serial() {
+    let mut m1 = Model::new(1);
+    m1.atoms.push(Atom::new(
+        0,
+        1,
+        "CA",
+        element_by_symbol("C"),
+        Vec3::new(0.0, 0.0, 0.0),
+        0.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+    let mut m4 = Model::new(4);
+    m4.atoms.push(Atom::new(
+        0,
+        1,
+        "CA",
+        element_by_symbol("C"),
+        Vec3::new(4.0, 0.0, 0.0),
+        0.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+    let mut m2 = Model::new(2);
+    m2.atoms.push(Atom::new(
+        0,
+        1,
+        "CA",
+        element_by_symbol("C"),
+        Vec3::new(2.0, 0.0, 0.0),
+        0.0,
+        "ALA",
+        1,
+        "A",
+        false,
+    ));
+
+    let mut structure = Structure::new("ensemble");
+    structure.set_models(vec![m4, m1, m2]);
+
+    assert_eq!(structure.model_serials(), vec![1, 2, 4]);
+    assert_eq!(structure.active_model_serial(), 1);
+    assert_eq!(structure.max_model_serial(), 4);
+    assert!((structure.atoms()[0].pos.x - 0.0).abs() < 1e-4);
+
+    structure.next_model();
+    assert_eq!(structure.active_model_serial(), 2);
+    structure.next_model();
+    assert_eq!(structure.active_model_serial(), 4);
+    structure.next_model();
+    assert_eq!(structure.active_model_serial(), 1);
+    structure.prev_model();
+    assert_eq!(structure.active_model_serial(), 4);
 }

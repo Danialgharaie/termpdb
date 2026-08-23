@@ -2,12 +2,20 @@
 
 use std::time::Instant;
 
-use crossterm::event::{KeyEvent, MouseEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::Paragraph;
 
+use crate::math::Vec3;
 use crate::model::Structure;
-use crate::render::{Camera, ColorScheme, Framebuffer, Lighting, RenderMode, render_structure};
+use crate::render::{
+    Camera, ColorScheme, Framebuffer, Lighting, LodMode, PixelColor, RibbonPrimitive,
+    RenderContext, RenderMode, Visibility, build_render_cache, build_ribbon_geometry,
+    draw_selection_markers, render_structure_ctx,
+};
+use crate::select::{Selection, parse_atom_spec, pick_atom_at_screen, resolve_atom};
 use crate::tui::events::{AppAction, MouseState, handle_key_event, handle_mouse_event};
 use crate::tui::widgets::{FooterWidget, HeaderWidget, HelpWidget, InfoWidget, ViewportWidget};
 
@@ -47,16 +55,72 @@ pub struct App {
     pub should_quit: bool,
     /// Mouse interaction tracking state
     pub mouse_state: MouseState,
+    /// Atom visibility filter (waters / hydrogens)
+    pub visibility: Visibility,
+    /// Up to two selected atoms in the active model
+    pub selection: Selection,
+    /// Open `/` pick prompt buffer, if any
+    pub pick_prompt: Option<String>,
+    /// Last pick-prompt error to show beside the query
+    pub pick_error: Option<String>,
+    /// Last 3D viewport rect (for mapping mouse clicks to framebuffer pixels)
+    pub viewport_area: Rect,
+    /// Level-of-detail for large structures
+    pub lod: LodMode,
+    /// Postprocessing configuration (outlines and SSAO)
+    pub postprocess_config: crate::render::PostProcessConfig,
+    /// Whether to render non-covalent interaction meshes (H-bonds & disulfide bridges)
+    pub show_interactions: bool,
+    /// Whether the 3D viewport must be re-rasterized on the next draw. Set by
+    /// any state change that affects the scene (camera, mode, colors, model,
+    /// assembly, LOD, visibility, selection); cleared once rasterized.
+    pub needs_rerender: bool,
+    /// Whether the full UI must be re-painted (ratatui draw). Broader than
+    /// needs_rerender: set by any input, spin, FPS readout tick, or resize so
+    /// the TUI does NOT redraw 60 fps while idle (CPU ~0 at rest).
+    pub needs_redraw: bool,
+    /// Per-atom render cache (colors, visibility flags, bounding sphere) rebuilt
+    /// only when the structure / color scheme / visibility / LOD changes -- not
+    /// when the camera moves, so orbit/spin reuse it across frames.
+    render_cache: RenderCache,
+    /// True when render_cache must be rebuilt before the next scene render.
+    render_cache_dirty: bool,
+    /// Cached, camera-independent ribbon geometry (spline + ligand primitives),
+    /// rebuilt alongside render_cache when structure/color/visibility/LOD changes.
+    ribbon_geometry: Vec<RibbonPrimitive>,
+}
+
+/// Camera-independent per-atom data cached across frames during orbit/spin.
+#[derive(Clone)]
+struct RenderCache {
+    colors: Vec<PixelColor>,
+    visible: Vec<bool>,
+    com: Vec3,
+    radius: f32,
+    max_vdw: f32,
+}
+
+impl Default for RenderCache {
+    fn default() -> Self {
+        Self {
+            colors: Vec::new(),
+            visible: Vec::new(),
+            com: Vec3::ZERO,
+            radius: 1.0,
+            max_vdw: 1.5,
+        }
+    }
 }
 
 impl App {
     /// Creates a new `App` instance initialized with the given structure and options.
     pub fn new(
-        structure: Structure,
+        mut structure: Structure,
         initial_mode: RenderMode,
         initial_color: ColorScheme,
         auto_spin: bool,
     ) -> Self {
+        structure.ensure_bonds();
         let mut camera = Camera::new();
         let com = structure.center_of_mass();
         let radius = structure.bounding_sphere_radius();
@@ -84,12 +148,57 @@ impl App {
             frames_since_fps: 0,
             should_quit: false,
             mouse_state: MouseState::default(),
+            visibility: Visibility::default(),
+            selection: Selection::default(),
+            pick_prompt: None,
+            pick_error: None,
+            viewport_area: Rect::default(),
+            lod: LodMode::Auto,
+            postprocess_config: crate::render::PostProcessConfig::default(),
+            show_interactions: false,
+            needs_rerender: true,
+            needs_redraw: true,
+            render_cache: RenderCache::default(),
+            render_cache_dirty: true,
+            ribbon_geometry: Vec::new(),
         }
+    }
+
+    /// Sets the level-of-detail mode.
+    pub fn with_lod(mut self, lod: LodMode) -> Self {
+        self.lod = lod;
+        self.render_cache_dirty = true;
+        self
+    }
+
+    /// Sets the atom visibility filter.
+    pub fn with_visibility(mut self, visibility: Visibility) -> Self {
+        self.visibility = visibility;
+        self.render_cache_dirty = true;
+        self
     }
 
     /// Sets the spin speed factor using builder pattern.
     pub fn with_spin_speed(mut self, speed: f32) -> Self {
         self.spin_speed = speed;
+        self
+    }
+
+    /// Sets the post-processing configuration (outlines and SSAO).
+    pub fn with_postprocess(mut self, config: crate::render::PostProcessConfig) -> Self {
+        self.postprocess_config = config;
+        self
+    }
+
+    /// Sets whether non-covalent interaction meshes are rendered.
+    pub fn with_interactions(mut self, show: bool) -> Self {
+        self.show_interactions = show;
+        self
+    }
+
+    /// Sets the Depth-of-Field focus distance.
+    pub fn with_dof(mut self, focus: Option<f32>) -> Self {
+        self.lighting.dof_focus = focus;
         self
     }
 
@@ -100,9 +209,32 @@ impl App {
 
     /// Dispatches an `AppAction` to update app state or camera.
     pub fn apply_action(&mut self, action: AppAction) {
+        // Any non-trivial action requires a UI redraw (overlay / mode / scene / prompt).
+        if !matches!(action, AppAction::None) {
+            self.needs_redraw = true;
+        }
+        // Actions that change the 3D scene additionally require re-rasterization.
+        // Modal / spin / quit / prompt actions only touch overlays or animation
+        // state, so they are excluded to avoid wasted renders while idle.
+        if !matches!(
+            action,
+            AppAction::None
+                | AppAction::Quit
+                | AppAction::ToggleSpin
+                | AppAction::IncreaseSpinSpeed
+                | AppAction::DecreaseSpinSpeed
+                | AppAction::ToggleHelp
+                | AppAction::ToggleInfo
+                | AppAction::StartPickPrompt
+        ) {
+            self.needs_rerender = true;
+        }
         match action {
             AppAction::Quit => {
-                if self.show_help {
+                if self.pick_prompt.is_some() {
+                    self.pick_prompt = None;
+                    self.pick_error = None;
+                } else if self.show_help {
                     self.show_help = false;
                 } else if self.show_info {
                     self.show_info = false;
@@ -116,11 +248,84 @@ impl App {
             AppAction::SetRenderMode(mode) => self.set_mode(mode),
             AppAction::NextRenderMode => self.next_mode(),
             AppAction::PrevRenderMode => self.prev_mode(),
-            AppAction::NextColorScheme => self.next_color_scheme(),
-            AppAction::PrevColorScheme => self.prev_color_scheme(),
+            AppAction::NextColorScheme => {
+                self.next_color_scheme();
+                self.render_cache_dirty = true;
+            }
+            AppAction::PrevColorScheme => {
+                self.prev_color_scheme();
+                self.render_cache_dirty = true;
+            }
             AppAction::ResetCamera => self.reset_camera(),
             AppAction::ToggleHelp => self.toggle_help(),
             AppAction::ToggleInfo => self.toggle_info(),
+            AppAction::NextModel => {
+                self.structure.next_model();
+                self.structure.ensure_bonds();
+                self.selection.clear();
+                self.render_cache_dirty = true;
+            }
+            AppAction::PrevModel => {
+                self.structure.prev_model();
+                self.structure.ensure_bonds();
+                self.selection.clear();
+                self.render_cache_dirty = true;
+            }
+            AppAction::NextAssembly => {
+                self.structure.next_assembly();
+                self.structure.ensure_bonds();
+                self.selection.clear();
+                self.reset_camera();
+                self.render_cache_dirty = true;
+            }
+            AppAction::PrevAssembly => {
+                self.structure.prev_assembly();
+                self.structure.ensure_bonds();
+                self.selection.clear();
+                self.reset_camera();
+                self.render_cache_dirty = true;
+            }
+            AppAction::NextLod => {
+                self.lod = self.lod.next();
+                self.render_cache_dirty = true;
+            }
+            AppAction::PrevLod => {
+                self.lod = self.lod.prev();
+                self.render_cache_dirty = true;
+            }
+            AppAction::StartPickPrompt => {
+                self.pick_prompt = Some(String::new());
+                self.pick_error = None;
+                self.show_help = false;
+                self.show_info = false;
+            }
+            AppAction::ClearSelection => self.selection.clear(),
+            AppAction::PickAtom(idx) => self.selection.pick(idx),
+            AppAction::PickAt { col, row } => self.pick_at_cell(col, row),
+            AppAction::ToggleWaters => {
+                self.visibility.show_waters = !self.visibility.show_waters;
+                self.render_cache_dirty = true;
+            }
+            AppAction::ToggleHydrogens => {
+                self.visibility.show_hydrogens = !self.visibility.show_hydrogens;
+                self.render_cache_dirty = true;
+            }
+            AppAction::ToggleOutline => {
+                self.postprocess_config.outline = !self.postprocess_config.outline;
+            }
+            AppAction::ToggleSsao => {
+                self.postprocess_config.ssao = !self.postprocess_config.ssao;
+            }
+            AppAction::ToggleInteractions => {
+                self.show_interactions = !self.show_interactions;
+            }
+            AppAction::ToggleDof => {
+                if self.lighting.dof_focus.is_some() {
+                    self.lighting.dof_focus = None;
+                } else {
+                    self.lighting.dof_focus = Some(self.camera.distance);
+                }
+            }
             AppAction::Orbit { dx, dy } => self.camera.orbit(dx, dy),
             AppAction::Pan { dx, dy } => self.camera.pan(dx * 0.2, dy * 0.2),
             AppAction::Zoom { delta } => self.camera.zoom(delta),
@@ -193,8 +398,97 @@ impl App {
 
     /// Handles a keyboard input event.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if self.pick_prompt.is_some() {
+            self.handle_pick_prompt_key(key);
+            return;
+        }
         let action = handle_key_event(key);
         self.apply_action(action);
+    }
+
+    fn handle_pick_prompt_key(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        // Any key in the pick prompt updates the prompt line / selection / error.
+        self.needs_redraw = true;
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.should_quit = true;
+            return;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.pick_prompt = None;
+                self.pick_error = None;
+            }
+            KeyCode::Enter => self.submit_pick_prompt(),
+            KeyCode::Backspace => {
+                if let Some(buf) = &mut self.pick_prompt {
+                    buf.pop();
+                }
+                self.pick_error = None;
+            }
+            KeyCode::Char(c) => {
+                if let Some(buf) = &mut self.pick_prompt {
+                    buf.push(c);
+                }
+                self.pick_error = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn submit_pick_prompt(&mut self) {
+        let Some(query) = self.pick_prompt.clone() else {
+            return;
+        };
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            self.pick_prompt = None;
+            return;
+        }
+        match parse_atom_spec(trimmed)
+            .and_then(|spec| resolve_atom(&self.structure, &spec, Some(&self.visibility)))
+        {
+            Ok(idx) => {
+                self.selection.pick(idx);
+                self.pick_prompt = None;
+                self.pick_error = None;
+                self.needs_rerender = true;
+                self.needs_redraw = true;
+            }
+            Err(err) => {
+                self.pick_error = Some(err.to_string());
+                self.needs_redraw = true;
+            }
+        }
+    }
+
+    fn pick_at_cell(&mut self, col: u16, row: u16) {
+        let area = self.viewport_area;
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+        if col < area.x || row < area.y {
+            return;
+        }
+        if col >= area.x + area.width || row >= area.y + area.height {
+            return;
+        }
+        let sx = (col - area.x) as f32 + 0.5;
+        let sy = ((row - area.y) as f32) * 2.0 + 1.0;
+        if let Some(idx) = pick_atom_at_screen(
+            &self.structure,
+            &self.camera,
+            self.visibility,
+            self.framebuffer.width,
+            self.framebuffer.height,
+            sx,
+            sy,
+            6.0,
+        ) {
+            self.selection.pick(idx);
+        }
     }
 
     /// Handles a mouse input event.
@@ -207,6 +501,9 @@ impl App {
     pub fn tick(&mut self, delta_time: f32) {
         if self.auto_spin {
             self.camera.orbit(self.spin_speed * delta_time * 30.0, 0.0);
+            // The camera moved this frame, so the viewport must be re-rasterized.
+            self.needs_rerender = true;
+            self.needs_redraw = true;
         }
 
         self.frame_count = self.frame_count.wrapping_add(1);
@@ -217,6 +514,8 @@ impl App {
             self.fps = (self.frames_since_fps as f32) / elapsed;
             self.frames_since_fps = 0;
             self.last_fps_update = Instant::now();
+            // Footer FPS readout changed -> repaint (but not re-rasterize).
+            self.needs_redraw = true;
         }
     }
 
@@ -236,14 +535,80 @@ impl App {
         self.camera.aspect = (pixel_width as f32) / (pixel_height as f32);
         self.framebuffer.clear((0, 0, 0));
 
-        render_structure(
+        // Rebuild the camera-independent per-atom cache only when the structure,
+        // color scheme, visibility, or LOD changed -- not every frame.
+        self.ensure_render_cache();
+
+        let level = self.lod.resolve(self.structure.atom_count());
+        let ctx = RenderContext {
+            structure: &self.structure,
+            camera: &self.camera,
+            mats: self.camera.matrices(),
+            lighting: &self.lighting,
+            visibility: self.visibility,
+            lod: level,
+            colors: &self.render_cache.colors,
+            visible: &self.render_cache.visible,
+            com: self.render_cache.com,
+            radius: self.render_cache.radius,
+            max_vdw: self.render_cache.max_vdw,
+            ribbon_geometry: Some(&self.ribbon_geometry),
+        };
+        render_structure_ctx(&ctx, self.render_mode, &mut self.framebuffer);
+
+        if self.show_interactions {
+            let interactions = crate::model::detect_interactions(&self.structure);
+            let atoms = self.structure.atoms();
+            for inter in &interactions {
+                if inter.atom1_idx < atoms.len() && inter.atom2_idx < atoms.len() {
+                    let a1 = &atoms[inter.atom1_idx];
+                    let a2 = &atoms[inter.atom2_idx];
+                    if let (Some(p1), Some(p2)) = (
+                        self.camera.project(&ctx.mats, a1.pos, self.framebuffer.width, self.framebuffer.height),
+                        self.camera.project(&ctx.mats, a2.pos, self.framebuffer.width, self.framebuffer.height),
+                    ) {
+                        let color = inter.kind.default_color();
+                        crate::render::rasterizer::draw_dashed_line_3d(&mut self.framebuffer, p1, p2, color, 4.0, 2.0);
+                    }
+                }
+            }
+        }
+
+        draw_selection_markers(
             &self.structure,
-            self.render_mode,
-            self.color_scheme,
             &self.camera,
             &mut self.framebuffer,
-            &self.lighting,
+            self.selection.atoms(),
         );
+
+        crate::render::postprocess::apply_postprocessing(&mut self.framebuffer, &self.postprocess_config);
+    }
+
+    /// Rebuilds the per-atom render cache (colors, visibility flags, bounding
+    /// sphere) if the structure, color scheme, visibility, or LOD changed since
+    /// the last build. Cheap (returns immediately) when the cache is still valid,
+    /// which is the common case during orbit/zoom/spin.
+    fn ensure_render_cache(&mut self) {
+        if !self.render_cache_dirty {
+            return;
+        }
+        let (colors, visible, com, radius, max_vdw) =
+            build_render_cache(&self.structure, self.color_scheme, self.visibility, self.lod);
+        let level = self.lod.resolve(self.structure.atom_count());
+        let ribbon_geometry = if self.render_mode == RenderMode::Ribbon {
+            build_ribbon_geometry(&self.structure, &colors, &visible, self.visibility, level)
+        } else {
+            Vec::new()
+        };
+        self.render_cache = RenderCache {
+            colors,
+            visible,
+            com,
+            radius,
+            max_vdw,
+        };
+        self.ribbon_geometry = ribbon_geometry;
+        self.render_cache_dirty = false;
     }
 
     /// Renders the complete UI layout (Header, Viewport, Footer, Modals) into the Ratatui frame.
@@ -263,24 +628,61 @@ impl App {
             .split(area);
 
         // Header
-        frame.render_widget(HeaderWidget::new(&self.structure), chunks[0]);
+        let sel_line = self.selection.status_line(&self.structure);
+        let header = if let Some(ref s) = sel_line {
+            HeaderWidget::new(&self.structure).with_selection(s)
+        } else {
+            HeaderWidget::new(&self.structure)
+        };
+        frame.render_widget(header, chunks[0]);
 
         // 3D Viewport
+        self.viewport_area = chunks[1];
         let v_width = chunks[1].width as usize;
         let v_height = chunks[1].height as usize;
-        self.render_scene(v_width, v_height);
+        // Only re-rasterize the 3D scene when something changed (or the viewport
+        // was resized); an unchanged framebuffer is painted straight from cache,
+        // so the event loop stays responsive while idle.
+        if self.needs_rerender
+            || self.framebuffer.width != v_width
+            || self.framebuffer.height != v_height * 2
+        {
+            self.render_scene(v_width, v_height);
+            self.needs_rerender = false;
+        }
         frame.render_widget(ViewportWidget::new(&self.framebuffer), chunks[1]);
 
-        // Footer
-        frame.render_widget(
-            FooterWidget::new(
-                self.render_mode,
-                self.color_scheme,
-                self.auto_spin,
-                self.fps,
-            ),
-            chunks[2],
-        );
+        // Footer or pick prompt
+        if let Some(query) = &self.pick_prompt {
+            let err = self
+                .pick_error
+                .as_deref()
+                .map(|e| format!("  [{e}]"))
+                .unwrap_or_default();
+            let line = format!(" / {query}_{err}");
+            frame.render_widget(
+                Paragraph::new(line).style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .bg(Color::Black)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                chunks[2],
+            );
+        } else {
+            frame.render_widget(
+                FooterWidget::new(
+                    self.render_mode,
+                    self.color_scheme,
+                    self.auto_spin,
+                    self.fps,
+                    self.visibility,
+                    self.lod,
+                    self.structure.atom_count(),
+                ),
+                chunks[2],
+            );
+        }
 
         // Overlays
         if self.show_help {

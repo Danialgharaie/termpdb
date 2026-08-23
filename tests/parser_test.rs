@@ -106,7 +106,7 @@ fn test_parse_pdb_basic_1crn() {
     assert!(chain_a.residue_count() >= 4);
 
     // Verify first atom
-    let a1 = &structure.atoms[0];
+    let a1 = &structure.atoms()[0];
     assert_eq!(a1.name, "N");
     assert_eq!(a1.res_name, "THR");
     assert_eq!(a1.res_seq, 1);
@@ -120,7 +120,7 @@ fn test_parse_pdb_basic_1crn() {
     assert!((a1.b_factor - 13.79).abs() < 1e-4);
 
     // Verify HETATM
-    let a12 = &structure.atoms[11];
+    let a12 = &structure.atoms()[11];
     assert_eq!(a12.name, "O");
     assert_eq!(a12.res_name, "HOH");
     assert_eq!(a12.res_seq, 47);
@@ -166,10 +166,10 @@ ATOM      4  ZN   ZN A   4       3.000   3.000   3.000  1.00 10.00
 END
 "#;
     let structure = parse_pdb(pdb_no_elem).expect("Failed to parse PDB without element columns");
-    assert_eq!(structure.atoms[0].element.symbol, "C");
-    assert_eq!(structure.atoms[1].element.symbol, "Fe");
-    assert_eq!(structure.atoms[2].element.symbol, "H");
-    assert_eq!(structure.atoms[3].element.symbol, "Zn");
+    assert_eq!(structure.atoms()[0].element.symbol, "C");
+    assert_eq!(structure.atoms()[1].element.symbol, "Fe");
+    assert_eq!(structure.atoms()[2].element.symbol, "H");
+    assert_eq!(structure.atoms()[3].element.symbol, "Zn");
 }
 
 #[test]
@@ -181,16 +181,16 @@ CONECT    1    3
 END
 "#;
     let structure = parse_pdb(pdb_text).expect("Failed to parse PDB with alt loc and charge");
-    assert_eq!(structure.atoms[0].alt_loc, Some('A'));
-    assert_eq!(structure.atoms[0].charge, Some(1));
-    assert_eq!(structure.atoms[1].alt_loc, Some('B'));
-    assert_eq!(structure.atoms[2].charge, Some(2));
-    assert_eq!(structure.atoms[2].element.symbol, "Zn");
+    assert_eq!(structure.atoms()[0].alt_loc, Some('A'));
+    assert_eq!(structure.atoms()[0].charge, Some(1));
+    assert_eq!(structure.atoms()[1].alt_loc, Some('B'));
+    assert_eq!(structure.atoms()[2].charge, Some(2));
+    assert_eq!(structure.atoms()[2].element.symbol, "Zn");
 
     // Verify CONECT bond was added between atom 0 (serial 1) and atom 2 (serial 3)
     assert!(
         structure
-            .bonds
+            .bonds()
             .iter()
             .any(|b| (b.atom1_idx == 0 && b.atom2_idx == 2)
                 || (b.atom1_idx == 2 && b.atom2_idx == 0))
@@ -213,7 +213,7 @@ fn test_parse_cif_basic_1crn() {
     let res7 = chain_a.get_residue(7).expect("Residue 7 missing");
     assert_eq!(res7.secondary_structure, SecondaryStructure::Helix);
 
-    let a1 = &structure.atoms[0];
+    let a1 = &structure.atoms()[0];
     assert_eq!(a1.name, "N");
     assert_eq!(a1.res_name, "THR");
     assert_eq!(a1.res_seq, 1);
@@ -252,8 +252,8 @@ ATOM 2 O 'O B' ALA A 1 1.0 1.0 1.0
     assert_eq!(structure.id_code.as_deref(), Some("TEST"));
     assert!(structure.title.contains("multi-line"));
     assert_eq!(structure.atom_count(), 2);
-    assert_eq!(structure.atoms[0].name, "C A");
-    assert_eq!(structure.atoms[1].name, "O B");
+    assert_eq!(structure.atoms()[0].name, "C A");
+    assert_eq!(structure.atoms()[1].name, "O B");
 }
 
 #[test]
@@ -300,4 +300,100 @@ fn test_load_structure_invalid_source() {
 fn test_fetch_pdb_invalid_id() {
     let result = fetch_pdb("!INVALID@#");
     assert!(result.is_err());
+}
+
+const SAMPLE_MULTI_MODEL_PDB: &str = r#"HEADER    ENSEMBLE                                01-JAN-24   1ENS
+TITLE     THREE MODELS WITH GAPPED SERIALS
+MODEL        1
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00 10.00           C
+ATOM      2  C   ALA A   1       1.500   0.000   0.000  1.00 10.00           C
+ENDMDL
+MODEL        2
+ATOM      1  CA  ALA A   1       5.000   0.000   0.000  1.00 10.00           C
+ATOM      2  C   ALA A   1       6.500   0.000   0.000  1.00 10.00           C
+ENDMDL
+MODEL        5
+ATOM      1  CA  ALA A   1      10.000   0.000   0.000  1.00 10.00           C
+ENDMDL
+END
+"#;
+
+const SAMPLE_MULTI_MODEL_CIF: &str = r#"data_1ENS
+_entry.id 1ENS
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.pdbx_PDB_model_num
+ATOM 1 C CA ALA A 1 0.0 0.0 0.0 1
+ATOM 2 C C ALA A 1 1.5 0.0 0.0 1
+ATOM 1 C CA ALA A 1 5.0 0.0 0.0 2
+ATOM 2 C C ALA A 1 6.5 0.0 0.0 2
+ATOM 1 C CA ALA A 1 10.0 0.0 0.0 5
+#
+"#;
+
+#[test]
+fn test_parse_pdb_multi_model_defaults_to_lowest_serial() {
+    let mut structure = parse_pdb(SAMPLE_MULTI_MODEL_PDB).expect("parse multi-model PDB");
+
+    assert_eq!(structure.model_serials(), vec![1, 2, 5]);
+    assert_eq!(structure.active_model_serial(), 1);
+    assert_eq!(structure.atom_count(), 2);
+    assert!((structure.atoms()[0].pos.x - 0.0).abs() < 1e-4);
+    assert_eq!(structure.bonds().len(), 1);
+
+    structure.set_active_model(5).expect("model 5 exists");
+    assert_eq!(structure.atom_count(), 1);
+    assert!((structure.atoms()[0].pos.x - 10.0).abs() < 1e-4);
+    assert!(structure.bonds().is_empty());
+
+    let err = structure.set_active_model(3).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("3"), "{msg}");
+    assert!(msg.contains("1"), "{msg}");
+}
+
+#[test]
+fn test_parse_pdb_multi_model_bonds_do_not_cross_models() {
+    let structure = parse_pdb(SAMPLE_MULTI_MODEL_PDB).unwrap();
+    // Each model has its own atom indices starting at 0; model 1 has a 1.5 Å C-C bond.
+    assert_eq!(structure.bonds().len(), 1);
+    assert_eq!(structure.bonds()[0].atom1_idx, 0);
+    assert_eq!(structure.bonds()[0].atom2_idx, 1);
+}
+
+#[test]
+fn test_parse_cif_multi_model_by_pdbx_model_num() {
+    let mut structure = parse_cif(SAMPLE_MULTI_MODEL_CIF).expect("parse multi-model CIF");
+    assert_eq!(structure.model_serials(), vec![1, 2, 5]);
+    assert_eq!(structure.active_model_serial(), 1);
+    assert!((structure.atoms()[0].pos.x - 0.0).abs() < 1e-4);
+
+    structure.next_model();
+    assert_eq!(structure.active_model_serial(), 2);
+    assert!((structure.atoms()[0].pos.x - 5.0).abs() < 1e-4);
+
+    structure.next_model();
+    assert_eq!(structure.active_model_serial(), 5);
+    structure.next_model();
+    assert_eq!(structure.active_model_serial(), 1);
+
+    structure.prev_model();
+    assert_eq!(structure.active_model_serial(), 5);
+}
+
+#[test]
+fn test_single_model_file_has_serial_one() {
+    let structure = parse_pdb(SAMPLE_PDB_1CRN).unwrap();
+    assert_eq!(structure.model_count(), 1);
+    assert_eq!(structure.active_model_serial(), 1);
+    assert!(!structure.has_multiple_models());
 }

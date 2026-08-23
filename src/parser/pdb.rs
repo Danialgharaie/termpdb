@@ -3,28 +3,26 @@
 //! Parses standard Protein Data Bank (PDB) formatted text into a [`Structure`].
 //! Supports HEADER, TITLE, HELIX, SHEET, ATOM, HETATM, and CONECT records.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::error::{Result, TermPdbError};
 use crate::math::Vec3;
-use crate::model::{
-    Atom, Bond, Chain, Element, Residue, SecondaryStructure, Structure, element_by_symbol,
-};
+use crate::model::assembly::affine_from_rows;
+use crate::model::{Assembly, AssemblyGen, Atom, Element, Residue, Structure, element_by_symbol};
+use crate::parser::{ModelAccum, apply_conect, assemble_model};
 
 /// Parses a PDB-formatted string into a [`Structure`].
 pub fn parse_pdb(input: &str) -> Result<Structure> {
     let mut structure = Structure::new("");
     let mut title_lines: Vec<String> = Vec::new();
-    let mut serial_to_idx: HashMap<i32, usize> = HashMap::new();
     let mut conect_pairs: Vec<(i32, i32)> = Vec::new();
 
     let mut helices: Vec<(String, i32, i32)> = Vec::new();
     let mut sheets: Vec<(String, i32, i32)> = Vec::new();
 
-    // Map: chain_id -> Vec<Residue>
-    // We maintain ordered list of chain IDs and residues for each chain.
-    let mut chain_order: Vec<String> = Vec::new();
-    let mut chain_residues: HashMap<String, Vec<Residue>> = HashMap::new();
+    let mut accums: BTreeMap<i32, ModelAccum> = BTreeMap::new();
+    let mut current_serial: i32 = 1;
+    let mut remark350 = Remark350Parser::default();
 
     for line in input.lines() {
         if line.is_empty() {
@@ -60,6 +58,21 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
                     title_lines.push(text.to_string());
                 }
             }
+            "MODEL" => {
+                let serial = safe_slice(line, 10, 14)
+                    .trim()
+                    .parse::<i32>()
+                    .ok()
+                    .or_else(|| {
+                        line.split_whitespace()
+                            .nth(1)
+                            .and_then(|s| s.parse::<i32>().ok())
+                    })
+                    .unwrap_or(current_serial);
+                current_serial = serial;
+                accums.entry(current_serial).or_default();
+            }
+            "ENDMDL" => {}
             "HELIX" => {
                 let mut chain_id = safe_slice(line, 19, 20).trim().to_string();
                 let mut init_seq = safe_slice(line, 21, 25).trim().parse::<i32>().ok();
@@ -132,10 +145,11 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
             }
             "ATOM" | "HETATM" => {
                 let is_hetatm = record_type == "HETATM";
+                let accum = accums.entry(current_serial).or_default();
                 let serial = safe_slice(line, 6, 11)
                     .trim()
                     .parse::<i32>()
-                    .unwrap_or(structure.atoms.len() as i32 + 1);
+                    .unwrap_or(accum.atoms.len() as i32 + 1);
                 let atom_name = safe_slice(line, 12, 16).trim();
                 let alt_loc_char = safe_slice(line, 16, 17).chars().next();
                 let alt_loc = alt_loc_char.filter(|&c| c != ' ');
@@ -195,7 +209,7 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
                 let charge_str = safe_slice(line, 78, 80).trim();
                 let charge = parse_charge(charge_str);
 
-                let atom_idx = structure.atoms.len();
+                let atom_idx = accum.atoms.len();
                 let mut atom = Atom::new(
                     atom_idx,
                     serial,
@@ -212,16 +226,15 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
                 atom.alt_loc = alt_loc;
                 atom.charge = charge;
 
-                structure.atoms.push(atom);
-                serial_to_idx.insert(serial, atom_idx);
+                accum.atoms.push(atom);
+                accum.serial_to_idx.insert(serial, atom_idx);
 
-                // Add to chain/residue structure
-                if !chain_order.contains(&chain_id) {
-                    chain_order.push(chain_id.clone());
-                    chain_residues.insert(chain_id.clone(), Vec::new());
+                if !accum.chain_order.contains(&chain_id) {
+                    accum.chain_order.push(chain_id.clone());
+                    accum.chain_residues.insert(chain_id.clone(), Vec::new());
                 }
 
-                let residues = chain_residues.get_mut(&chain_id).unwrap();
+                let residues = accum.chain_residues.get_mut(&chain_id).unwrap();
                 let is_same_as_last = if let Some(last_res) = residues.last() {
                     last_res.seq == res_seq
                         && last_res.ins_code == ins_code
@@ -237,6 +250,11 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
                     new_res.ins_code = ins_code;
                     new_res.atom_indices.push(atom_idx);
                     residues.push(new_res);
+                }
+            }
+            "REMARK" => {
+                if safe_slice(line, 7, 10).trim() == "350" {
+                    remark350.feed(line);
                 }
             }
             "CONECT" => {
@@ -259,64 +277,158 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
         structure.title = title_lines.join(" ");
     }
 
-    // Build chains
-    for chain_id in chain_order {
-        let mut chain = Chain::new(&chain_id);
-        if let Some(mut residues) = chain_residues.remove(&chain_id) {
-            // Apply secondary structure
-            for res in &mut residues {
-                for (h_chain, h_init, h_end) in &helices {
-                    if h_chain == &chain_id && res.seq >= *h_init && res.seq <= *h_end {
-                        res.secondary_structure = SecondaryStructure::Helix;
-                        break;
-                    }
-                }
-                if res.secondary_structure == SecondaryStructure::Coil {
-                    for (s_chain, s_init, s_end) in &sheets {
-                        if s_chain == &chain_id && res.seq >= *s_init && res.seq <= *s_end {
-                            res.secondary_structure = SecondaryStructure::Sheet;
-                            break;
-                        }
-                    }
-                }
-            }
-            chain.residues = residues;
-        }
-        structure.add_chain(chain);
+    let has_ss = !helices.is_empty() || !sheets.is_empty();
+    let mut models = Vec::with_capacity(accums.len());
+    for (serial, accum) in accums {
+        let serial_to_idx = accum.serial_to_idx.clone();
+        let mut model = assemble_model(serial, accum, &helices, &sheets);
+        apply_conect(&mut model, &conect_pairs, &serial_to_idx);
+        models.push(model);
     }
+    structure.set_models(models);
+    structure.set_assemblies(remark350.finish());
 
-    // Auto-detect covalent bonds
-    structure.build_bonds();
-
-    // Incorporate explicit CONECT bonds
-    for (src_serial, dst_serial) in conect_pairs {
-        if let (Some(&idx1), Some(&idx2)) = (
-            serial_to_idx.get(&src_serial),
-            serial_to_idx.get(&dst_serial),
-        ) {
-            if idx1 == idx2 {
-                continue;
-            }
-            let (a, b) = if idx1 < idx2 {
-                (idx1, idx2)
-            } else {
-                (idx2, idx1)
-            };
-            let exists = structure.bonds.iter().any(|bond| {
-                let (ba, bb) = if bond.atom1_idx < bond.atom2_idx {
-                    (bond.atom1_idx, bond.atom2_idx)
-                } else {
-                    (bond.atom2_idx, bond.atom1_idx)
-                };
-                ba == a && bb == b
-            });
-            if !exists {
-                structure.add_bond(Bond::single(a, b));
-            }
-        }
+    if !has_ss {
+        crate::model::dssp::assign_dssp(&mut structure);
     }
 
     Ok(structure)
+}
+
+#[derive(Default)]
+struct Remark350Parser {
+    assemblies: Vec<Assembly>,
+    current: Option<Assembly>,
+    pending_chains: Vec<String>,
+    biomt_rows: HashMap<String, [[f32; 4]; 3]>,
+}
+
+impl Remark350Parser {
+    fn feed(&mut self, line: &str) {
+        let rest = safe_slice(line, 11, line.len()).trim();
+        if rest.is_empty() {
+            return;
+        }
+        if let Some(id) = rest.strip_prefix("BIOMOLECULE:") {
+            self.flush_current();
+            let id = id.trim().to_string();
+            if !id.is_empty() {
+                self.current = Some(Assembly::new(id));
+            }
+            return;
+        }
+        if self.current.is_none() {
+            return;
+        }
+        if let Some(details) = rest.strip_prefix("AUTHOR DETERMINED BIOLOGICAL UNIT:") {
+            if let Some(asm) = self.current.as_mut() {
+                asm.details = details.trim().to_string();
+            }
+            return;
+        }
+        if let Some(details) = rest.strip_prefix("SOFTWARE DETERMINED QUATERNARY STRUCTURE:") {
+            if let Some(asm) = self.current.as_mut()
+                && asm.details.is_empty()
+            {
+                asm.details = details.trim().to_string();
+            }
+            return;
+        }
+        if let Some(chains) = rest.strip_prefix("APPLY THE FOLLOWING TO CHAINS:") {
+            self.flush_gen();
+            self.pending_chains = parse_chain_list(chains);
+            return;
+        }
+        if let Some(chains) = rest.strip_prefix("AND CHAINS:") {
+            self.pending_chains.extend(parse_chain_list(chains));
+            return;
+        }
+        if rest.contains("BIOMT") {
+            parse_biomt_line(rest, &mut self.biomt_rows);
+        }
+    }
+
+    fn flush_gen(&mut self) {
+        let Some(asm) = self.current.as_mut() else {
+            return;
+        };
+        if self.pending_chains.is_empty() || self.biomt_rows.is_empty() {
+            return;
+        }
+        let mut ids: Vec<String> = self.biomt_rows.keys().cloned().collect();
+        ids.sort_by(|a, b| match (a.parse::<i32>(), b.parse::<i32>()) {
+            (Ok(x), Ok(y)) => x.cmp(&y),
+            _ => a.cmp(b),
+        });
+        for id in &ids {
+            if let Some(rows) = self.biomt_rows.get(id) {
+                asm.operators.insert(id.clone(), affine_from_rows(*rows));
+            }
+        }
+        asm.gens.push(AssemblyGen {
+            oper_expression: ids.join(","),
+            chain_ids: self.pending_chains.clone(),
+        });
+        self.pending_chains.clear();
+        self.biomt_rows.clear();
+    }
+
+    fn flush_current(&mut self) {
+        self.flush_gen();
+        if let Some(asm) = self.current.take()
+            && !asm.gens.is_empty()
+        {
+            self.assemblies.push(asm);
+        }
+        self.pending_chains.clear();
+        self.biomt_rows.clear();
+    }
+
+    fn finish(mut self) -> Vec<Assembly> {
+        self.flush_current();
+        self.assemblies
+    }
+}
+
+fn parse_chain_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(|p| p.trim().trim_end_matches(':').to_string())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+fn parse_biomt_line(rest: &str, rows: &mut HashMap<String, [[f32; 4]; 3]>) {
+    let tokens: Vec<&str> = rest.split_whitespace().collect();
+    let Some(tag) = tokens.first() else {
+        return;
+    };
+    let row_idx = if tag.ends_with('1') {
+        0
+    } else if tag.ends_with('2') {
+        1
+    } else if tag.ends_with('3') {
+        2
+    } else {
+        return;
+    };
+    if tokens.len() < 6 {
+        return;
+    }
+    let id = tokens[1].to_string();
+    let Ok(a) = tokens[2].parse::<f32>() else {
+        return;
+    };
+    let Ok(b) = tokens[3].parse::<f32>() else {
+        return;
+    };
+    let Ok(c) = tokens[4].parse::<f32>() else {
+        return;
+    };
+    let Ok(t) = tokens[5].parse::<f32>() else {
+        return;
+    };
+    let entry = rows.entry(id).or_insert([[0.0; 4]; 3]);
+    entry[row_idx] = [a, b, c, t];
 }
 
 fn safe_slice(s: &str, start: usize, end: usize) -> &str {

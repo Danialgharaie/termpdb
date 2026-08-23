@@ -1,0 +1,13 @@
+# Compile for THIS machine's CPU.
+#
+# The release profile in Cargo.toml already enables fat LTO, a single codegen
+# unit, and panic=abort. On top of that, targeting the native CPU lets LLVM use
+# the host's AVX2 / AVX-512 / FMA units and auto-vectorize the software
+# rasterizer's hot per-pixel and per-atom loops -- the single biggest
+# compile-time win for a CPU renderer like this one.
+#
+# Caveat: the resulting binary is tuned for this microarchitecture and may SIGILL
+# on older / different CPUs. Delete this file (or run with RUSTFLAGS="") to
+# produce a portable build.
+[build]
+rustflags = ["-C", "target-cpu=native"]

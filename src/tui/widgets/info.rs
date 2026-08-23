@@ -48,7 +48,12 @@ impl Widget for InfoWidget<'_> {
             self.structure.title.as_str()
         };
 
-        let chain_ids: Vec<String> = self.structure.chains.iter().map(|c| c.id.clone()).collect();
+        let chain_ids: Vec<String> = self
+            .structure
+            .chains()
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
         let chain_str = if chain_ids.is_empty() {
             "None".to_string()
         } else {
@@ -60,7 +65,7 @@ impl Widget for InfoWidget<'_> {
         let mut sheet_count = 0;
         let mut coil_count = 0;
 
-        for chain in &self.structure.chains {
+        for chain in self.structure.chains() {
             for res in &chain.residues {
                 match res.secondary_structure {
                     crate::model::SecondaryStructure::Helix => helix_count += 1,
@@ -71,10 +76,15 @@ impl Widget for InfoWidget<'_> {
         }
 
         let (min_b, max_b) = self.structure.b_factor_range();
-        let hetatm_count = self.structure.atoms.iter().filter(|a| a.is_hetatm).count();
+        let hetatm_count = self
+            .structure
+            .atoms()
+            .iter()
+            .filter(|a| a.is_hetatm)
+            .count();
         let heavy_atom_count = self
             .structure
-            .atoms
+            .atoms()
             .iter()
             .filter(|a| !a.is_hydrogen())
             .count();
@@ -122,6 +132,51 @@ impl Widget for InfoWidget<'_> {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(chain_str, Style::default().fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "  Assemblies: ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    if self.structure.has_assemblies() {
+                        format!(
+                            "{} (active {})",
+                            self.structure.assembly_ids().join(", "),
+                            self.structure.active_assembly_id().unwrap_or("ASU")
+                        )
+                    } else {
+                        "ASU only".to_string()
+                    },
+                    Style::default().fg(Color::White),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    "  Models: ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    if self.structure.has_multiple_models() {
+                        format!(
+                            "{} (active {})",
+                            self.structure
+                                .model_serials()
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            self.structure.active_model_serial()
+                        )
+                    } else {
+                        format!("{}", self.structure.active_model_serial())
+                    },
+                    Style::default().fg(Color::White),
+                ),
             ]),
             Line::from(vec![
                 Span::styled(

@@ -4,13 +4,13 @@
 //! into a [`Structure`]. Supports `_atom_site`, `_struct_conf`, `_struct_sheet_range`,
 //! and top-level metadata tags.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::error::{Result, TermPdbError};
-use crate::math::Vec3;
-use crate::model::{
-    Atom, Chain, Element, Residue, SecondaryStructure, Structure, element_by_symbol,
-};
+use crate::math::{Mat4, Vec3};
+use crate::model::assembly::affine_from_rows;
+use crate::model::{Assembly, AssemblyGen, Atom, Element, Residue, Structure, element_by_symbol};
+use crate::parser::{ModelAccum, assemble_model};
 
 #[derive(Debug, PartialEq, Clone)]
 enum CifToken {
@@ -28,8 +28,10 @@ pub fn parse_cif(input: &str) -> Result<Structure> {
     let mut helices: Vec<(String, i32, i32)> = Vec::new();
     let mut sheets: Vec<(String, i32, i32)> = Vec::new();
 
-    let mut chain_order: Vec<String> = Vec::new();
-    let mut chain_residues: HashMap<String, Vec<Residue>> = HashMap::new();
+    let mut accums: BTreeMap<i32, ModelAccum> = BTreeMap::new();
+    let mut assembly_meta: Vec<(String, String)> = Vec::new();
+    let mut assembly_gens: Vec<(String, String, String)> = Vec::new();
+    let mut oper_list: HashMap<String, Mat4> = HashMap::new();
 
     let mut token_idx = 0;
     while token_idx < tokens.len() {
@@ -86,21 +88,34 @@ pub fn parse_cif(input: &str) -> Result<Structure> {
                 let is_struct_sheet = headers
                     .iter()
                     .any(|h| h.starts_with("_struct_sheet_range."));
+                let is_assembly = headers
+                    .iter()
+                    .any(|h| h.starts_with("_pdbx_struct_assembly."));
+                let is_assembly_gen = headers
+                    .iter()
+                    .any(|h| h.starts_with("_pdbx_struct_assembly_gen."));
+                let is_oper_list = headers
+                    .iter()
+                    .any(|h| h.starts_with("_pdbx_struct_oper_list."));
 
                 if is_atom_site {
-                    parse_atom_site_loop(
-                        &headers,
-                        &values,
-                        num_cols,
-                        num_rows,
-                        &mut structure,
-                        &mut chain_order,
-                        &mut chain_residues,
-                    )?;
+                    parse_atom_site_loop(&headers, &values, num_cols, num_rows, &mut accums)?;
                 } else if is_struct_conf {
                     parse_struct_conf_loop(&headers, &values, num_cols, num_rows, &mut helices);
                 } else if is_struct_sheet {
                     parse_struct_sheet_loop(&headers, &values, num_cols, num_rows, &mut sheets);
+                } else if is_assembly_gen {
+                    parse_assembly_gen_loop(
+                        &headers,
+                        &values,
+                        num_cols,
+                        num_rows,
+                        &mut assembly_gens,
+                    );
+                } else if is_oper_list {
+                    parse_oper_list_loop(&headers, &values, num_cols, num_rows, &mut oper_list);
+                } else if is_assembly {
+                    parse_assembly_loop(&headers, &values, num_cols, num_rows, &mut assembly_meta);
                 }
             }
             CifToken::Value(_) => {
@@ -109,36 +124,62 @@ pub fn parse_cif(input: &str) -> Result<Structure> {
         }
     }
 
-    // Build chains
-    for chain_id in chain_order {
-        let mut chain = Chain::new(&chain_id);
-        if let Some(mut residues) = chain_residues.remove(&chain_id) {
-            // Apply secondary structure
-            for res in &mut residues {
-                for (h_chain, h_init, h_end) in &helices {
-                    if h_chain == &chain_id && res.seq >= *h_init && res.seq <= *h_end {
-                        res.secondary_structure = SecondaryStructure::Helix;
-                        break;
-                    }
-                }
-                if res.secondary_structure == SecondaryStructure::Coil {
-                    for (s_chain, s_init, s_end) in &sheets {
-                        if s_chain == &chain_id && res.seq >= *s_init && res.seq <= *s_end {
-                            res.secondary_structure = SecondaryStructure::Sheet;
-                            break;
-                        }
-                    }
-                }
-            }
-            chain.residues = residues;
-        }
-        structure.add_chain(chain);
+    let has_ss = !helices.is_empty() || !sheets.is_empty();
+    let mut models = Vec::with_capacity(accums.len());
+    for (serial, accum) in accums {
+        models.push(assemble_model(serial, accum, &helices, &sheets));
+    }
+    structure.set_models(models);
+    structure.set_assemblies(build_cif_assemblies(
+        assembly_meta,
+        assembly_gens,
+        oper_list,
+    ));
+
+    if !has_ss {
+        crate::model::dssp::assign_dssp(&mut structure);
     }
 
-    // Auto-detect covalent bonds
-    structure.build_bonds();
-
     Ok(structure)
+}
+
+fn build_cif_assemblies(
+    meta: Vec<(String, String)>,
+    gens: Vec<(String, String, String)>,
+    operators: HashMap<String, Mat4>,
+) -> Vec<Assembly> {
+    let mut by_id: HashMap<String, Assembly> = HashMap::new();
+    for (id, details) in meta {
+        let mut asm = Assembly::new(&id);
+        asm.details = details;
+        asm.operators = operators.clone();
+        by_id.insert(id, asm);
+    }
+    for (assembly_id, expr, chains) in gens {
+        let asm = by_id.entry(assembly_id.clone()).or_insert_with(|| {
+            let mut a = Assembly::new(&assembly_id);
+            a.operators = operators.clone();
+            a
+        });
+        let chain_ids = chains
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s != "." && s != "?")
+            .collect();
+        asm.gens.push(AssemblyGen {
+            oper_expression: expr,
+            chain_ids,
+        });
+    }
+    let mut assemblies: Vec<Assembly> = by_id.into_values().collect();
+    assemblies.sort_by(|a, b| match (a.id.parse::<i32>(), b.id.parse::<i32>()) {
+        (Ok(x), Ok(y)) => x.cmp(&y),
+        _ => a.id.cmp(&b.id),
+    });
+    assemblies
+        .into_iter()
+        .filter(|a| !a.gens.is_empty())
+        .collect()
 }
 
 fn col_index(headers: &[String], name: &str) -> Option<usize> {
@@ -149,15 +190,115 @@ fn get_val(row: &[String], idx: Option<usize>) -> Option<&str> {
     idx.and_then(|i| row.get(i).map(|s| s.as_str()))
 }
 
-#[allow(clippy::too_many_arguments)]
+fn parse_assembly_loop(
+    headers: &[String],
+    values: &[String],
+    num_cols: usize,
+    num_rows: usize,
+    out: &mut Vec<(String, String)>,
+) {
+    let id_col = col_index(headers, "_pdbx_struct_assembly.id");
+    let details_col = col_index(headers, "_pdbx_struct_assembly.details")
+        .or_else(|| col_index(headers, "_pdbx_struct_assembly.method_details"));
+    for r in 0..num_rows {
+        let row = &values[r * num_cols..(r + 1) * num_cols];
+        let id = get_val(row, id_col).unwrap_or("");
+        if id.is_empty() || id == "." || id == "?" {
+            continue;
+        }
+        let details = get_val(row, details_col)
+            .filter(|s| *s != "." && *s != "?")
+            .unwrap_or("")
+            .to_string();
+        out.push((id.to_string(), details));
+    }
+}
+
+fn parse_assembly_gen_loop(
+    headers: &[String],
+    values: &[String],
+    num_cols: usize,
+    num_rows: usize,
+    out: &mut Vec<(String, String, String)>,
+) {
+    let id_col = col_index(headers, "_pdbx_struct_assembly_gen.assembly_id");
+    let expr_col = col_index(headers, "_pdbx_struct_assembly_gen.oper_expression");
+    let chains_col = col_index(headers, "_pdbx_struct_assembly_gen.asym_id_list");
+    for r in 0..num_rows {
+        let row = &values[r * num_cols..(r + 1) * num_cols];
+        let id = get_val(row, id_col).unwrap_or("");
+        let expr = get_val(row, expr_col).unwrap_or("");
+        let chains = get_val(row, chains_col).unwrap_or("");
+        if id.is_empty() || id == "." || expr.is_empty() || expr == "." {
+            continue;
+        }
+        out.push((id.to_string(), expr.to_string(), chains.to_string()));
+    }
+}
+
+fn parse_oper_list_loop(
+    headers: &[String],
+    values: &[String],
+    num_cols: usize,
+    num_rows: usize,
+    out: &mut HashMap<String, Mat4>,
+) {
+    let id_col = col_index(headers, "_pdbx_struct_oper_list.id");
+    let m11 = col_index(headers, "_pdbx_struct_oper_list.matrix[1][1]");
+    let m12 = col_index(headers, "_pdbx_struct_oper_list.matrix[1][2]");
+    let m13 = col_index(headers, "_pdbx_struct_oper_list.matrix[1][3]");
+    let m21 = col_index(headers, "_pdbx_struct_oper_list.matrix[2][1]");
+    let m22 = col_index(headers, "_pdbx_struct_oper_list.matrix[2][2]");
+    let m23 = col_index(headers, "_pdbx_struct_oper_list.matrix[2][3]");
+    let m31 = col_index(headers, "_pdbx_struct_oper_list.matrix[3][1]");
+    let m32 = col_index(headers, "_pdbx_struct_oper_list.matrix[3][2]");
+    let m33 = col_index(headers, "_pdbx_struct_oper_list.matrix[3][3]");
+    let v1 = col_index(headers, "_pdbx_struct_oper_list.vector[1]");
+    let v2 = col_index(headers, "_pdbx_struct_oper_list.vector[2]");
+    let v3 = col_index(headers, "_pdbx_struct_oper_list.vector[3]");
+
+    let f = |row: &[String], col: Option<usize>, default: f32| -> f32 {
+        get_val(row, col)
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(default)
+    };
+
+    for r in 0..num_rows {
+        let row = &values[r * num_cols..(r + 1) * num_cols];
+        let id = get_val(row, id_col).unwrap_or("");
+        if id.is_empty() || id == "." || id == "?" {
+            continue;
+        }
+        let rows = [
+            [
+                f(row, m11, 1.0),
+                f(row, m12, 0.0),
+                f(row, m13, 0.0),
+                f(row, v1, 0.0),
+            ],
+            [
+                f(row, m21, 0.0),
+                f(row, m22, 1.0),
+                f(row, m23, 0.0),
+                f(row, v2, 0.0),
+            ],
+            [
+                f(row, m31, 0.0),
+                f(row, m32, 0.0),
+                f(row, m33, 1.0),
+                f(row, v3, 0.0),
+            ],
+        ];
+        out.insert(id.to_string(), affine_from_rows(rows));
+    }
+}
+
 fn parse_atom_site_loop(
     headers: &[String],
     values: &[String],
     num_cols: usize,
     num_rows: usize,
-    structure: &mut Structure,
-    chain_order: &mut Vec<String>,
-    chain_residues: &mut HashMap<String, Vec<Residue>>,
+    accums: &mut BTreeMap<i32, ModelAccum>,
 ) -> Result<()> {
     let group_pdb_col = col_index(headers, "_atom_site.group_PDB");
     let id_col = col_index(headers, "_atom_site.id");
@@ -178,6 +319,7 @@ fn parse_atom_site_loop(
     let b_iso_col = col_index(headers, "_atom_site.B_iso_or_equiv");
     let formal_charge_col = col_index(headers, "_atom_site.pdbx_formal_charge");
     let ins_code_col = col_index(headers, "_atom_site.pdbx_PDB_ins_code");
+    let model_num_col = col_index(headers, "_atom_site.pdbx_PDB_model_num");
 
     for r in 0..num_rows {
         let row = &values[r * num_cols..(r + 1) * num_cols];
@@ -185,9 +327,21 @@ fn parse_atom_site_loop(
         let group_pdb = get_val(row, group_pdb_col).unwrap_or("ATOM");
         let is_hetatm = group_pdb.eq_ignore_ascii_case("HETATM");
 
+        let model_serial = get_val(row, model_num_col)
+            .and_then(|s| {
+                if s == "?" || s == "." || s.is_empty() {
+                    None
+                } else {
+                    s.parse::<i32>().ok()
+                }
+            })
+            .unwrap_or(1);
+
+        let accum = accums.entry(model_serial).or_default();
+
         let serial = get_val(row, id_col)
             .and_then(|s| s.parse::<i32>().ok())
-            .unwrap_or((structure.atoms.len() + 1) as i32);
+            .unwrap_or((accum.atoms.len() + 1) as i32);
 
         let atom_name = get_val(row, auth_atom_id_col)
             .filter(|s| *s != "?" && *s != ".")
@@ -261,7 +415,7 @@ fn parse_atom_site_loop(
 
         let charge = get_val(row, formal_charge_col).and_then(|s| s.parse::<i8>().ok());
 
-        let atom_idx = structure.atoms.len();
+        let atom_idx = accum.atoms.len();
         let mut atom = Atom::new(
             atom_idx,
             serial,
@@ -278,15 +432,15 @@ fn parse_atom_site_loop(
         atom.alt_loc = alt_loc;
         atom.charge = charge;
 
-        structure.atoms.push(atom);
+        accum.atoms.push(atom);
+        accum.serial_to_idx.insert(serial, atom_idx);
 
-        // Add to chain/residue structure
-        if !chain_order.contains(&chain_id) {
-            chain_order.push(chain_id.clone());
-            chain_residues.insert(chain_id.clone(), Vec::new());
+        if !accum.chain_order.contains(&chain_id) {
+            accum.chain_order.push(chain_id.clone());
+            accum.chain_residues.insert(chain_id.clone(), Vec::new());
         }
 
-        let residues = chain_residues.get_mut(&chain_id).unwrap();
+        let residues = accum.chain_residues.get_mut(&chain_id).unwrap();
         let is_same_as_last = if let Some(last_res) = residues.last() {
             last_res.seq == res_seq && last_res.ins_code == ins_code && last_res.name == res_name
         } else {

@@ -33,12 +33,44 @@ pub enum AppAction {
     ToggleHelp,
     /// Toggle structure information popup
     ToggleInfo,
+    /// Step to the next model (wrap)
+    NextModel,
+    /// Step to the previous model (wrap)
+    PrevModel,
+    /// Toggle water / solvent visibility
+    ToggleWaters,
+    /// Toggle hydrogen visibility
+    ToggleHydrogens,
+    /// Next biological assembly (wraps through ASU)
+    NextAssembly,
+    /// Previous biological assembly
+    PrevAssembly,
+    /// Cycle level-of-detail forward
+    NextLod,
+    /// Cycle level-of-detail backward
+    PrevLod,
+    /// Toggle silhouette depth outlines
+    ToggleOutline,
+    /// Toggle screen-space ambient occlusion (SSAO)
+    ToggleSsao,
+    /// Toggle non-covalent interactions (H-bonds and disulfide bridges)
+    ToggleInteractions,
+    /// Toggle Depth-of-Field (DoF) focal plane cueing
+    ToggleDof,
     /// Orbit camera around target by (dx, dy)
     Orbit { dx: f32, dy: f32 },
     /// Pan camera target by (dx, dy)
     Pan { dx: f32, dy: f32 },
     /// Zoom camera by delta
     Zoom { delta: f32 },
+    /// Open the atom-pick prompt (`/`)
+    StartPickPrompt,
+    /// Clear the current atom selection
+    ClearSelection,
+    /// Select an atom by index in the active model
+    PickAtom(usize),
+    /// Click in the terminal cell `(col, row)` to pick the nearest atom
+    PickAt { col: u16, row: u16 },
     /// No action
     None,
 }
@@ -52,6 +84,8 @@ pub struct MouseState {
     pub is_left_down: bool,
     /// Whether right mouse button is currently held down
     pub is_right_down: bool,
+    /// True if the current left-button gesture moved (orbit/pan, not a click pick)
+    pub left_dragged: bool,
 }
 
 /// Maps a crossterm `KeyEvent` to an `AppAction`.
@@ -73,6 +107,7 @@ pub fn handle_key_event(key: KeyEvent) -> AppAction {
         KeyCode::Char('2') => AppAction::SetRenderMode(RenderMode::BallAndStick),
         KeyCode::Char('3') => AppAction::SetRenderMode(RenderMode::Ribbon),
         KeyCode::Char('4') => AppAction::SetRenderMode(RenderMode::Vdw),
+        KeyCode::Char('5') => AppAction::SetRenderMode(RenderMode::Wireframe),
         KeyCode::Char('m') => AppAction::NextRenderMode,
         KeyCode::Char('M') => AppAction::PrevRenderMode,
         KeyCode::Char('c') => {
@@ -86,6 +121,20 @@ pub fn handle_key_event(key: KeyEvent) -> AppAction {
         KeyCode::Char('r') | KeyCode::Char('R') => AppAction::ResetCamera,
         KeyCode::Char('?') | KeyCode::Char('h') | KeyCode::Char('H') => AppAction::ToggleHelp,
         KeyCode::Char('i') | KeyCode::Char('I') => AppAction::ToggleInfo,
+        KeyCode::Char('n') => AppAction::NextModel,
+        KeyCode::Char('p') => AppAction::PrevModel,
+        KeyCode::Char('o') => AppAction::ToggleWaters,
+        KeyCode::Char('O') => AppAction::ToggleOutline,
+        KeyCode::Char('k') | KeyCode::Char('K') => AppAction::ToggleSsao,
+        KeyCode::Char('e') | KeyCode::Char('E') => AppAction::ToggleInteractions,
+        KeyCode::Char('f') | KeyCode::Char('F') => AppAction::ToggleDof,
+        KeyCode::Char('u') => AppAction::ToggleHydrogens,
+        KeyCode::Char('/') => AppAction::StartPickPrompt,
+        KeyCode::Char('x') | KeyCode::Char('X') => AppAction::ClearSelection,
+        KeyCode::Char('b') => AppAction::NextAssembly,
+        KeyCode::Char('B') => AppAction::PrevAssembly,
+        KeyCode::Char('l') => AppAction::NextLod,
+        KeyCode::Char('L') => AppAction::PrevLod,
         KeyCode::Left => AppAction::Orbit { dx: -5.0, dy: 0.0 },
         KeyCode::Right => AppAction::Orbit { dx: 5.0, dy: 0.0 },
         KeyCode::Up => AppAction::Orbit { dx: 0.0, dy: -5.0 },
@@ -105,6 +154,7 @@ pub fn handle_mouse_event(mouse: MouseEvent, state: &mut MouseState) -> AppActio
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
             state.is_left_down = true;
+            state.left_dragged = false;
             state.last_pos = Some((mouse.column, mouse.row));
             AppAction::None
         }
@@ -116,7 +166,14 @@ pub fn handle_mouse_event(mouse: MouseEvent, state: &mut MouseState) -> AppActio
         MouseEventKind::Up(MouseButton::Left) => {
             state.is_left_down = false;
             state.last_pos = Some((mouse.column, mouse.row));
-            AppAction::None
+            if state.left_dragged {
+                AppAction::None
+            } else {
+                AppAction::PickAt {
+                    col: mouse.column,
+                    row: mouse.row,
+                }
+            }
         }
         MouseEventKind::Up(MouseButton::Right) => {
             state.is_right_down = false;
@@ -133,6 +190,9 @@ pub fn handle_mouse_event(mouse: MouseEvent, state: &mut MouseState) -> AppActio
                 (0.0, 0.0)
             };
             state.last_pos = Some((mouse.column, mouse.row));
+            if dx != 0.0 || dy != 0.0 {
+                state.left_dragged = true;
+            }
 
             if mouse.modifiers.contains(KeyModifiers::SHIFT) {
                 AppAction::Pan { dx, dy }
