@@ -189,6 +189,72 @@ pub fn draw_overlay_sphere(
     }
 }
 
+/// A screen-space point with linear depth: `(x, y, z)`.
+pub type ScreenPoint = (f32, f32, f32);
+
+/// Clips the segment `p1 -> p2` (screen coordinates with linear depth) to the
+/// rectangle `(0, 0)-(w, h)` using Liang-Barsky parametric clipping.
+///
+/// Returns the clipped endpoints (z interpolated linearly along the segment),
+/// or `None` if the segment lies entirely outside the viewport.
+///
+/// This bounds Bresenham-style stepping for lines whose endpoints project far
+/// outside the frame (e.g. a bond partner just inside the near plane projects
+/// to coordinates of 10^7+ pixels): without clipping, a single
+/// [`draw_line_3d`] call would iterate hundreds of millions of times while
+/// writing nothing, hanging the frame. After clipping, the step count is
+/// inherently bounded by the viewport diagonal.
+pub fn clip_segment_to_screen(
+    p1: ScreenPoint,
+    p2: ScreenPoint,
+    w: usize,
+    h: usize,
+) -> Option<(ScreenPoint, ScreenPoint)> {
+    let (x1, y1, z1) = p1;
+    let (x2, y2, z2) = p2;
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+
+    // Parametric clip against the four half-planes x >= 0, x <= w, y >= 0, y <= h.
+    let mut t0 = 0.0_f32;
+    let mut t1 = 1.0_f32;
+    let edges = [
+        (-dx, x1),
+        (dx, w as f32 - x1),
+        (-dy, y1),
+        (dy, h as f32 - y1),
+    ];
+    for &(p, q) in &edges {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                t0 = t0.max(r);
+            } else {
+                t1 = t1.min(r);
+            }
+            if t0 > t1 {
+                return None;
+            }
+        }
+    }
+
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    Some((
+        (lerp(x1, x2, t0), lerp(y1, y2, t0), lerp(z1, z2, t0)),
+        (lerp(x1, x2, t1), lerp(y1, y2, t1), lerp(z1, z2, t1)),
+    ))
+}
+
+/// Upper bound on useful Bresenham steps for a segment inside a `w * h`
+/// viewport: its visible length cannot exceed the diagonal.
+fn max_line_steps(w: usize, h: usize) -> usize {
+    ((w as f32).hypot(h as f32)).ceil().max(1.0) as usize
+}
+
 /// Draws an overlay line that always wins the depth test.
 pub fn draw_overlay_line(
     buffer: &mut Framebuffer,
@@ -196,11 +262,17 @@ pub fn draw_overlay_line(
     p2_screen: (f32, f32, f32),
     color: PixelColor,
 ) {
-    let (x1, y1, _) = p1_screen;
-    let (x2, y2, _) = p2_screen;
+    let Some((a, b)) = clip_segment_to_screen(p1_screen, p2_screen, buffer.width, buffer.height)
+    else {
+        return;
+    };
+    let (x1, y1, _) = a;
+    let (x2, y2, _) = b;
     let dx = x2 - x1;
     let dy = y2 - y1;
-    let steps = (dx.abs().max(dy.abs()).ceil() as usize).max(1);
+    let steps = (dx.abs().max(dy.abs()).ceil() as usize)
+        .min(max_line_steps(buffer.width, buffer.height))
+        .max(1);
     let steps_f = steps as f32;
     let x_step = dx / steps_f;
     let y_step = dy / steps_f;
@@ -221,14 +293,20 @@ pub fn draw_line_3d(
     p2_screen: (f32, f32, f32),
     color: PixelColor,
 ) {
-    let (x1, y1, z1) = p1_screen;
-    let (x2, y2, z2) = p2_screen;
+    let Some((a, b)) = clip_segment_to_screen(p1_screen, p2_screen, buffer.width, buffer.height)
+    else {
+        return;
+    };
+    let (x1, y1, z1) = a;
+    let (x2, y2, z2) = b;
 
     let dx = x2 - x1;
     let dy = y2 - y1;
     let dz = z2 - z1;
 
-    let steps = (dx.abs().max(dy.abs()).ceil() as usize).max(1);
+    let steps = (dx.abs().max(dy.abs()).ceil() as usize)
+        .min(max_line_steps(buffer.width, buffer.height))
+        .max(1);
     let steps_f = steps as f32;
 
     let x_step = dx / steps_f;
@@ -254,15 +332,21 @@ pub fn draw_dashed_line_3d(
     dash_px: f32,
     gap_px: f32,
 ) {
-    let (x1, y1, z1) = p1_screen;
-    let (x2, y2, z2) = p2_screen;
+    let Some((a, b)) = clip_segment_to_screen(p1_screen, p2_screen, buffer.width, buffer.height)
+    else {
+        return;
+    };
+    let (x1, y1, z1) = a;
+    let (x2, y2, z2) = b;
 
     let dx = x2 - x1;
     let dy = y2 - y1;
     let dz = z2 - z1;
 
     let len = (dx * dx + dy * dy).sqrt();
-    let steps = (dx.abs().max(dy.abs()).ceil() as usize).max(1);
+    let steps = (dx.abs().max(dy.abs()).ceil() as usize)
+        .min(max_line_steps(buffer.width, buffer.height))
+        .max(1);
     let steps_f = steps as f32;
 
     let x_step = dx / steps_f;

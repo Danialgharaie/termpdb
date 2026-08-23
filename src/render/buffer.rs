@@ -7,6 +7,15 @@
 /// RGB color represented as `(r, g, b)` components in 0..=255.
 pub type PixelColor = (u8, u8, u8);
 
+/// Hard ceiling on framebuffer pixels (`width * height`).
+///
+/// A frame allocates ~7 bytes per pixel (RGB tuple + f32 depth), so this caps
+/// a single framebuffer at roughly 448 MiB -- far above any legitimate
+/// terminal grid or export resolution (4K @ 2x SSAA is ~33 Mpx), while
+/// preventing hostile `--width`/`--height`/`--ssaa` combinations from
+/// requesting terabytes of RAM and aborting the process with OOM.
+pub const MAX_FRAMEBUFFER_PIXELS: usize = 64 * 1024 * 1024;
+
 /// A software framebuffer containing truecolor RGB pixels and a floating-point depth buffer (Z-buffer).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Framebuffer {
@@ -138,7 +147,12 @@ impl Framebuffer {
         // Worst case is roughly two SGR sequences (~20 bytes) plus one char per
         // cell; run-length encoding makes the common case (large uniform regions
         // such as the background and solid sphere interiors) far smaller.
-        let mut out = String::with_capacity(term_rows * self.width * 24);
+        // Reserve lazily beyond 1 MiB: `with_capacity` pre-allocates eagerly,
+        // and a worst-case reservation for a huge framebuffer would itself be
+        // a multi-hundred-MB spike before a single cell is written. String
+        // growth is amortized O(1), so under-reserving only costs copies.
+        let worst_case = term_rows.saturating_mul(self.width).saturating_mul(24);
+        let mut out = String::with_capacity(worst_case.min(1024 * 1024));
 
         for r in 0..term_rows {
             // Each row is terminated by an SGR reset, so the run state starts fresh.

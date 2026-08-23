@@ -70,15 +70,30 @@ impl BrailleBuffer {
     }
 
     /// Draws a 3D line in subpixel coordinates with linear depth interpolation.
+    ///
+    /// The segment is clipped to the canvas first (see
+    /// [`crate::render::rasterizer::clip_segment_to_screen`]) so that endpoints
+    /// projecting far outside the frame cannot produce unbounded step counts.
     pub fn draw_line_3d(&mut self, p1: (f32, f32, f32), p2: (f32, f32, f32), color: PixelColor) {
-        let (x1, y1, z1) = p1;
-        let (x2, y2, z2) = p2;
+        let Some((a, b)) =
+            crate::render::rasterizer::clip_segment_to_screen(p1, p2, self.width, self.height)
+        else {
+            return;
+        };
+        let (x1, y1, z1) = a;
+        let (x2, y2, z2) = b;
 
         let dx = x2 - x1;
         let dy = y2 - y1;
         let dz = z2 - z1;
 
-        let steps = (dx.abs().max(dy.abs()).ceil() as usize).max(1);
+        let steps = (dx.abs().max(dy.abs()).ceil() as usize)
+            .min(
+                ((self.width as f32).hypot(self.height as f32))
+                    .ceil()
+                    .max(1.0) as usize,
+            )
+            .max(1);
         let steps_f = steps as f32;
 
         let x_step = dx / steps_f;

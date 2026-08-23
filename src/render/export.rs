@@ -11,6 +11,7 @@ use crate::render::PixelColor;
 use crate::render::buffer::Framebuffer;
 use crate::render::camera::{Camera, CameraMatrices};
 use crate::render::color::ColorScheme;
+use crate::render::fit_render_size;
 use crate::render::lighting::Lighting;
 use crate::render::representations::trace::{MAX_TRACE_BOND_DISTANCE, find_trace_guide_atom};
 use crate::render::representations::{
@@ -38,6 +39,7 @@ pub fn render_supersampled(
     visibility: Visibility,
     lod: LodMode,
 ) -> Vec<u8> {
+    let (width, height, ssaa) = fit_render_size(width, height, ssaa);
     let ssaa = ssaa.max(1);
     let sw = width * ssaa;
     let sh = height * ssaa;
@@ -538,6 +540,7 @@ pub fn export_mp4(
         ));
     }
 
+    let (width, height, ssaa) = fit_render_size(width, height, ssaa);
     let ssaa = ssaa.max(1);
     let sw = width * ssaa;
     let sh = height * ssaa;
