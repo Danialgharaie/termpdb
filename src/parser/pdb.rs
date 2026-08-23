@@ -431,12 +431,17 @@ fn parse_biomt_line(rest: &str, rows: &mut HashMap<String, [[f32; 4]; 3]>) {
     entry[row_idx] = [a, b, c, t];
 }
 
+/// Extracts the fixed-column substring `s[start..end]`.
+///
+/// PDB columns are byte offsets into an ASCII line. A range that falls outside
+/// the line or lands inside a multi-byte UTF-8 character means the record is
+/// malformed; treat that field as empty rather than panicking on a non-char
+/// boundary slice.
 fn safe_slice(s: &str, start: usize, end: usize) -> &str {
-    if start >= s.len() {
+    if start >= s.len() || end <= start {
         return "";
     }
-    let end = end.min(s.len());
-    &s[start..end]
+    s.get(start..end.min(s.len())).unwrap_or("")
 }
 
 fn parse_charge(charge_str: &str) -> Option<i8> {
@@ -484,11 +489,14 @@ fn infer_element(atom_name: &str, res_name: &str, is_hetatm: bool) -> Element {
         return element_by_symbol("C");
     }
 
-    // Check 2-letter element matches if cleaned >= 2
-    if cleaned.len() >= 2 {
-        let first_char = cleaned.chars().next().unwrap();
-        let second_char = cleaned.chars().nth(1).unwrap().to_ascii_uppercase();
+    // Check 2-letter element matches if cleaned has at least two characters.
+    // Index by chars, not bytes: atom names may contain non-ASCII characters
+    // and byte slicing would panic on non-char boundaries.
+    let mut chars = cleaned.chars();
+    let first_char = chars.next();
+    let second_char = chars.next().map(|c| c.to_ascii_uppercase());
 
+    if let (Some(first_char), Some(second_char)) = (first_char, second_char) {
         // Check standard IUPAC amino acid / nucleotide atom prefix conventions
         if (first_char == 'H' || first_char == 'h')
             && matches!(
@@ -525,7 +533,12 @@ fn infer_element(atom_name: &str, res_name: &str, is_hetatm: bool) -> Element {
             return element_by_symbol("S");
         }
 
-        let candidate2 = &cleaned[..2];
+        let elem2_end = cleaned
+            .char_indices()
+            .nth(2)
+            .map(|(i, _)| i)
+            .unwrap_or(cleaned.len());
+        let candidate2 = &cleaned[..elem2_end];
         let elem2 = element_by_symbol(candidate2);
         if elem2.atomic_number != 0 {
             return elem2;
@@ -533,7 +546,12 @@ fn infer_element(atom_name: &str, res_name: &str, is_hetatm: bool) -> Element {
     }
 
     // Check 1-letter element
-    let candidate1 = &cleaned[..1];
+    let elem1_end = cleaned
+        .char_indices()
+        .nth(1)
+        .map(|(i, _)| i)
+        .unwrap_or(cleaned.len());
+    let candidate1 = &cleaned[..elem1_end];
     let elem1 = element_by_symbol(candidate1);
     if elem1.atomic_number != 0 {
         return elem1;

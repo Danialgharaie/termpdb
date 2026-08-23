@@ -552,10 +552,14 @@ fn infer_cif_element(atom_name: &str, res_name: &str, is_hetatm: bool) -> Elemen
         return element_by_symbol("C");
     }
 
-    if cleaned.len() >= 2 {
-        let first_char = cleaned.chars().next().unwrap();
-        let second_char = cleaned.chars().nth(1).unwrap().to_ascii_uppercase();
+    // Check 2-letter element matches if cleaned has at least two characters.
+    // Index by chars, not bytes: atom names may contain non-ASCII characters
+    // and byte slicing would panic on non-char boundaries.
+    let mut chars = cleaned.chars();
+    let first_char = chars.next();
+    let second_char = chars.next().map(|c| c.to_ascii_uppercase());
 
+    if let (Some(first_char), Some(second_char)) = (first_char, second_char) {
         if (first_char == 'H' || first_char == 'h')
             && matches!(
                 second_char,
@@ -591,14 +595,25 @@ fn infer_cif_element(atom_name: &str, res_name: &str, is_hetatm: bool) -> Elemen
             return element_by_symbol("S");
         }
 
-        let candidate2 = &cleaned[..2];
+        let elem2_end = cleaned
+            .char_indices()
+            .nth(2)
+            .map(|(i, _)| i)
+            .unwrap_or(cleaned.len());
+        let candidate2 = &cleaned[..elem2_end];
         let elem2 = element_by_symbol(candidate2);
         if elem2.atomic_number != 0 {
             return elem2;
         }
     }
 
-    let candidate1 = &cleaned[..1];
+    // Check 1-letter element
+    let elem1_end = cleaned
+        .char_indices()
+        .nth(1)
+        .map(|(i, _)| i)
+        .unwrap_or(cleaned.len());
+    let candidate1 = &cleaned[..elem1_end];
     let elem1 = element_by_symbol(candidate1);
     if elem1.atomic_number != 0 {
         return elem1;
