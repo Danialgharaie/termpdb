@@ -737,3 +737,67 @@ END
     assert_eq!(app.structure.atom_count(), 2);
     assert!(app.camera.distance >= asu_distance);
 }
+
+#[test]
+fn test_switching_into_ribbon_mode_renders_geometry() {
+    // Regression: mode changes never flagged the render cache dirty, so the
+    // cached ribbon geometry stayed empty and the viewport rendered blank
+    // after switching into Ribbon mode mid-session.
+    let structure = create_test_structure();
+    let mut app = App::new(structure, RenderMode::Trace, ColorScheme::Cpk, false);
+    app.render_scene(80, 48);
+    let trace_lit = lit_pixel_count(&app);
+    assert!(trace_lit > 0, "trace baseline frame must not be blank");
+
+    app.apply_action(AppAction::SetRenderMode(RenderMode::Ribbon));
+    assert_eq!(app.render_mode, RenderMode::Ribbon);
+    app.render_scene(80, 48);
+
+    let ribbon_lit = lit_pixel_count(&app);
+    assert!(
+        ribbon_lit > 100,
+        "ribbon viewport blank after direct mode switch: {ribbon_lit} lit pixels"
+    );
+}
+
+#[test]
+fn test_cycling_into_ribbon_mode_renders_geometry() {
+    // Same regression via the cycle-key path: BallAndStick -> next == Ribbon.
+    let structure = create_test_structure();
+    let mut app = App::new(structure, RenderMode::BallAndStick, ColorScheme::Cpk, false);
+    app.apply_action(AppAction::NextRenderMode);
+    assert_eq!(app.render_mode, RenderMode::Ribbon);
+    app.render_scene(80, 48);
+
+    let ribbon_lit = lit_pixel_count(&app);
+    assert!(
+        ribbon_lit > 100,
+        "ribbon viewport blank after cycling into it: {ribbon_lit} lit pixels"
+    );
+}
+
+#[test]
+fn test_interactions_cache_rasterizes_identically_across_frames() {
+    // The interaction list is now cached across frames; the second rasterized
+    // frame must reuse the cache and produce a pixel-identical image.
+    let structure = create_test_structure();
+    let mut app = App::new(structure, RenderMode::BallAndStick, ColorScheme::Cpk, false)
+        .with_interactions(true);
+
+    app.render_scene(80, 48);
+    let first_pass = app.framebuffer.pixels.clone();
+    app.render_scene(80, 48);
+    assert_eq!(
+        first_pass, app.framebuffer.pixels,
+        "cached interactions must rasterize identically on reuse"
+    );
+}
+
+/// Counts non-background pixels in the app's framebuffer.
+fn lit_pixel_count(app: &App) -> usize {
+    app.framebuffer
+        .pixels
+        .iter()
+        .filter(|&&p| p != (0, 0, 0))
+        .count()
+}

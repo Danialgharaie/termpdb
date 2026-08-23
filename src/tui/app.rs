@@ -9,7 +9,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Paragraph;
 
 use crate::math::Vec3;
-use crate::model::Structure;
+use crate::model::{Interaction, Structure};
 use crate::render::{
     Camera, ColorScheme, Framebuffer, Lighting, LodMode, PixelColor, RenderContext, RenderMode,
     RibbonPrimitive, Visibility, build_render_cache, build_ribbon_geometry, draw_selection_markers,
@@ -57,7 +57,7 @@ pub struct App {
     pub mouse_state: MouseState,
     /// Atom visibility filter (waters / hydrogens)
     pub visibility: Visibility,
-    /// Up to two selected atoms in the active model
+    /// Up to four selected atoms in the active model
     pub selection: Selection,
     /// Open `/` pick prompt buffer, if any
     pub pick_prompt: Option<String>,
@@ -88,6 +88,12 @@ pub struct App {
     /// Cached, camera-independent ribbon geometry (spline + ligand primitives),
     /// rebuilt alongside render_cache when structure/color/visibility/LOD changes.
     ribbon_geometry: Vec<RibbonPrimitive>,
+    /// Detected non-covalent interactions (H-bonds, disulfides) for the active
+    /// structure view. Detection is O(N²), so it is cached and only recomputed
+    /// after a model or assembly switch -- never per frame.
+    cached_interactions: Vec<Interaction>,
+    /// True when `cached_interactions` must be recomputed before drawing.
+    interactions_dirty: bool,
 }
 
 /// Camera-independent per-atom data cached across frames during orbit/spin.
@@ -161,20 +167,39 @@ impl App {
             render_cache: RenderCache::default(),
             render_cache_dirty: true,
             ribbon_geometry: Vec::new(),
+            cached_interactions: Vec::new(),
+            interactions_dirty: true,
         }
+    }
+
+    /// Flags the camera-independent render cache (per-atom colors, visibility,
+    /// bounding sphere, ribbon geometry) as stale so it is rebuilt before the
+    /// next scene raster. Required after any change to structure content,
+    /// color scheme, visibility, LOD, **or render mode** -- ribbon geometry is
+    /// cached alongside the atom colors and only exists in Ribbon mode.
+    fn mark_render_cache_dirty(&mut self) {
+        self.render_cache_dirty = true;
+    }
+
+    /// Flags every structure-derived cache (render cache + detected
+    /// interactions) as stale. Required after model or assembly switches,
+    /// which replace the active atom view.
+    fn mark_scene_dirty(&mut self) {
+        self.render_cache_dirty = true;
+        self.interactions_dirty = true;
     }
 
     /// Sets the level-of-detail mode.
     pub fn with_lod(mut self, lod: LodMode) -> Self {
         self.lod = lod;
-        self.render_cache_dirty = true;
+        self.mark_render_cache_dirty();
         self
     }
 
     /// Sets the atom visibility filter.
     pub fn with_visibility(mut self, visibility: Visibility) -> Self {
         self.visibility = visibility;
-        self.render_cache_dirty = true;
+        self.mark_render_cache_dirty();
         self
     }
 
@@ -250,11 +275,11 @@ impl App {
             AppAction::PrevRenderMode => self.prev_mode(),
             AppAction::NextColorScheme => {
                 self.next_color_scheme();
-                self.render_cache_dirty = true;
+                self.mark_render_cache_dirty();
             }
             AppAction::PrevColorScheme => {
                 self.prev_color_scheme();
-                self.render_cache_dirty = true;
+                self.mark_render_cache_dirty();
             }
             AppAction::ResetCamera => self.reset_camera(),
             AppAction::ToggleHelp => self.toggle_help(),
@@ -263,35 +288,35 @@ impl App {
                 self.structure.next_model();
                 self.structure.ensure_bonds();
                 self.selection.clear();
-                self.render_cache_dirty = true;
+                self.mark_scene_dirty();
             }
             AppAction::PrevModel => {
                 self.structure.prev_model();
                 self.structure.ensure_bonds();
                 self.selection.clear();
-                self.render_cache_dirty = true;
+                self.mark_scene_dirty();
             }
             AppAction::NextAssembly => {
                 self.structure.next_assembly();
                 self.structure.ensure_bonds();
                 self.selection.clear();
                 self.reset_camera();
-                self.render_cache_dirty = true;
+                self.mark_scene_dirty();
             }
             AppAction::PrevAssembly => {
                 self.structure.prev_assembly();
                 self.structure.ensure_bonds();
                 self.selection.clear();
                 self.reset_camera();
-                self.render_cache_dirty = true;
+                self.mark_scene_dirty();
             }
             AppAction::NextLod => {
                 self.lod = self.lod.next();
-                self.render_cache_dirty = true;
+                self.mark_render_cache_dirty();
             }
             AppAction::PrevLod => {
                 self.lod = self.lod.prev();
-                self.render_cache_dirty = true;
+                self.mark_render_cache_dirty();
             }
             AppAction::StartPickPrompt => {
                 self.pick_prompt = Some(String::new());
@@ -304,11 +329,11 @@ impl App {
             AppAction::PickAt { col, row } => self.pick_at_cell(col, row),
             AppAction::ToggleWaters => {
                 self.visibility.show_waters = !self.visibility.show_waters;
-                self.render_cache_dirty = true;
+                self.mark_render_cache_dirty();
             }
             AppAction::ToggleHydrogens => {
                 self.visibility.show_hydrogens = !self.visibility.show_hydrogens;
-                self.render_cache_dirty = true;
+                self.mark_render_cache_dirty();
             }
             AppAction::ToggleOutline => {
                 self.postprocess_config.outline = !self.postprocess_config.outline;
@@ -349,18 +374,24 @@ impl App {
     }
 
     /// Sets the rendering representation mode directly.
+    ///
+    /// Ribbon geometry lives in the render cache (it is only built while
+    /// [`RenderMode::Ribbon`] is active), so every mode change must flag the
+    /// cache stale -- otherwise switching into Ribbon mode renders an empty
+    /// viewport.
     pub fn set_mode(&mut self, mode: RenderMode) {
         self.render_mode = mode;
+        self.mark_render_cache_dirty();
     }
 
     /// Cycles to the next rendering mode.
     pub fn next_mode(&mut self) {
-        self.render_mode = self.render_mode.next();
+        self.set_mode(self.render_mode.next());
     }
 
     /// Cycles to the previous rendering mode.
     pub fn prev_mode(&mut self) {
-        self.render_mode = self.render_mode.prev();
+        self.set_mode(self.render_mode.prev());
     }
 
     /// Cycles to the next color scheme.
@@ -539,6 +570,11 @@ impl App {
         // color scheme, visibility, or LOD changed -- not every frame.
         self.ensure_render_cache();
 
+        // Refresh the interaction cache before `ctx` borrows scene fields.
+        if self.show_interactions {
+            self.ensure_interactions();
+        }
+
         let level = self.lod.resolve(self.structure.atom_count());
         let ctx = RenderContext {
             structure: &self.structure,
@@ -557,9 +593,8 @@ impl App {
         render_structure_ctx(&ctx, self.render_mode, &mut self.framebuffer);
 
         if self.show_interactions {
-            let interactions = crate::model::detect_interactions(&self.structure);
             let atoms = self.structure.atoms();
-            for inter in &interactions {
+            for inter in &self.cached_interactions {
                 if inter.atom1_idx < atoms.len() && inter.atom2_idx < atoms.len() {
                     let a1 = &atoms[inter.atom1_idx];
                     let a2 = &atoms[inter.atom2_idx];
@@ -602,6 +637,18 @@ impl App {
             &mut self.framebuffer,
             &self.postprocess_config,
         );
+    }
+
+    /// Lazily recomputes the non-covalent interaction list after a model or
+    /// assembly switch. Detection is O(N²) over all atoms, so the result is
+    /// cached and reused across frames; recomputing every rasterized frame
+    /// made `--interactions` sessions crawl on large structures.
+    fn ensure_interactions(&mut self) {
+        if !self.interactions_dirty {
+            return;
+        }
+        self.cached_interactions = crate::model::detect_interactions(&self.structure);
+        self.interactions_dirty = false;
     }
 
     /// Rebuilds the per-atom render cache (colors, visibility flags, bounding
