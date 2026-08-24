@@ -183,6 +183,12 @@ impl Camera {
     ///
     /// Produces the same result as Camera::world_to_screen; only the redundant
     /// per-call matrix construction is elided.
+    ///
+    /// The point itself is rejected when it lies outside `[near, far]`. That is
+    /// the right cull for points, but NOT for extended primitives: a sphere or
+    /// cylinder whose reference point is nearer than the near plane can still
+    /// cover screen area. Use [`Camera::project_sphere`] or
+    /// [`Camera::project_segment`] when rasterizing those.
     pub fn project(
         &self,
         mats: &CameraMatrices,
@@ -190,16 +196,27 @@ impl Camera {
         width: usize,
         height: usize,
     ) -> Option<(f32, f32, f32)> {
-        // View-space depth (camera looks down -Z): needed for near/far clipping
-        // and as the z-buffer value written by the rasterizers. Inlined from the
-        // view matrix's third row to avoid a full point transform.
-        let v = &mats.view.m;
-        let view_depth = -(v[2] * world_pos.x + v[6] * world_pos.y + v[10] * world_pos.z + v[14]);
+        let view_depth = view_space_depth(mats, world_pos);
 
         if view_depth <= 0.0 || view_depth < self.near || view_depth > self.far {
             return None;
         }
 
+        self.project_unchecked(mats, world_pos, width, height)
+    }
+
+    /// Screen-space projection of a point already known to lie within the
+    /// `[near, far]` depth range, in front of the camera.
+    ///
+    /// Being inside the frustum depth range guarantees a positive, finite
+    /// perspective `w`; only degenerate `w <= 0` / NaN input is still filtered.
+    fn project_unchecked(
+        &self,
+        mats: &CameraMatrices,
+        world_pos: Vec3,
+        width: usize,
+        height: usize,
+    ) -> Option<(f32, f32, f32)> {
         let m = &mats.view_proj.m;
         let x = m[0] * world_pos.x + m[4] * world_pos.y + m[8] * world_pos.z + m[12];
         let y = m[1] * world_pos.x + m[5] * world_pos.y + m[9] * world_pos.z + m[13];
@@ -216,6 +233,157 @@ impl Camera {
         let screen_x = (ndc_x + 1.0) * 0.5 * (width as f32);
         let screen_y = (1.0 - ndc_y) * 0.5 * (height as f32);
 
+        let view_depth = view_space_depth(mats, world_pos);
         Some((screen_x, screen_y, view_depth))
+    }
+
+    /// Projects the world-space segment `a -> b` for thick-line/cylinder
+    /// drawing, clipping it against the near and far planes in view space first.
+    ///
+    /// Returns the two clipped endpoints as `(screen_x, screen_y, view_depth)`,
+    /// or `None` when nothing survives the clip (both endpoints behind the near
+    /// plane, beyond the far plane, or behind the camera).
+    ///
+    /// Clipping before projecting keeps bonds that straddle the near plane
+    /// visible: rejecting them wholesale (the previous behavior, via two
+    /// independent [`Camera::project`] calls) made primitives pop out of
+    /// existence while zooming into a molecule. Endpoints are interpolated in
+    /// world space before projection, so the projected geometry matches exactly
+    /// what an unclipped endpoint would have produced.
+    pub fn project_segment(
+        &self,
+        mats: &CameraMatrices,
+        a: Vec3,
+        b: Vec3,
+        width: usize,
+        height: usize,
+    ) -> Option<(
+        super::rasterizer::ScreenPoint,
+        super::rasterizer::ScreenPoint,
+    )> {
+        let d_a = view_space_depth(mats, a);
+        let d_b = view_space_depth(mats, b);
+
+        // Parametric clip of depth(t) = d_a + t * (d_b - d_a) against the
+        // [near, far] slab (Liang-Barsky style). t0/t1 shrink to the surviving
+        // parameter interval.
+        let mut t0 = 0.0_f32;
+        let mut t1 = 1.0_f32;
+        let d_d = d_b - d_a;
+
+        // depth(t) >= near
+        if d_d == 0.0 {
+            if d_a < self.near {
+                return None;
+            }
+        } else {
+            let t = (self.near - d_a) / d_d;
+            if d_d > 0.0 {
+                t0 = t0.max(t);
+            } else {
+                t1 = t1.min(t);
+            }
+        }
+
+        // depth(t) <= far
+        if d_d == 0.0 {
+            if d_a > self.far {
+                return None;
+            }
+        } else {
+            let t = (self.far - d_a) / d_d;
+            if d_d > 0.0 {
+                t1 = t1.min(t);
+            } else {
+                t0 = t0.max(t);
+            }
+        }
+
+        if t0 > t1 {
+            return None;
+        }
+
+        // Interpolate in world space so each clipped endpoint is projected like
+        // any ordinary point (screen-space interpolation would bend under the
+        // perspective divide).
+        let ca = a + (b - a) * t0;
+        let cb = a + (b - a) * t1;
+        let pa = self.project_unchecked(mats, ca, width, height)?;
+        let pb = self.project_unchecked(mats, cb, width, height)?;
+        Some((pa, pb))
+    }
+
+    /// Projects a world-space sphere for the analytical sphere rasterizers.
+    ///
+    /// Returns the projected center `(screen_x, screen_y, depth)` plus the
+    /// screen radius in pixels, or `None` when no part of the sphere can reach
+    /// the visible depth range.
+    ///
+    /// # Near-plane handling (conservative approximation)
+    ///
+    /// A sphere whose CENTER is nearer than the near plane is not culled as
+    /// long as its surface crosses `z = near`; culling it made space-filling
+    /// molecules pop out of existence while zooming. Such spheres are drawn
+    /// with this deliberate approximation:
+    ///
+    /// - the depth handed to the z-buffer is clamped up to `near` -- the truly
+    ///   visible surface starts at the near plane anyway -- and
+    /// - the screen radius is computed from the true center distance, so the
+    ///   silhouette keeps growing smoothly instead of jumping or vanishing as
+    ///   the center crosses the plane.
+    ///
+    /// This slightly over-draws (the sliver between the true surface and the
+    /// near plane is filled too) and ignores exact silhouette curvature, which
+    /// is acceptable for a terminal renderer but is NOT an exact clip.
+    ///
+    /// Spheres entirely between the camera and the near plane (`center depth +
+    /// radius <= near`) and spheres behind the camera are still culled.
+    pub fn project_sphere(
+        &self,
+        mats: &CameraMatrices,
+        center: Vec3,
+        world_radius: f32,
+        width: usize,
+        height: usize,
+    ) -> Option<((f32, f32, f32), f32)> {
+        let view_depth = view_space_depth(mats, center);
+
+        if !view_depth.is_finite() || view_depth <= 0.0 || view_depth > self.far {
+            return None;
+        }
+
+        if view_depth < self.near {
+            if view_depth + world_radius <= self.near {
+                // Entirely between the camera and the near plane.
+                return None;
+            }
+            let screen = self.project_unchecked(mats, center, width, height)?;
+            let screen_r = project_radius(world_radius, view_depth, self.fov, height);
+            return Some(((screen.0, screen.1, self.near), screen_r));
+        }
+
+        let (sx, sy, depth) = self.project_unchecked(mats, center, width, height)?;
+        let screen_r = project_radius(world_radius, depth, self.fov, height);
+        Some(((sx, sy, depth), screen_r))
+    }
+}
+
+/// View-space depth (distance along the viewing axis, positive in front of the
+/// camera) of a world-space point.
+///
+/// Inlined from the view matrix's third row to avoid a full point transform:
+/// the camera looks down -Z, so depth is the negated z of the view position.
+fn view_space_depth(mats: &CameraMatrices, world_pos: Vec3) -> f32 {
+    let v = &mats.view.m;
+    -(v[2] * world_pos.x + v[6] * world_pos.y + v[10] * world_pos.z + v[14])
+}
+
+/// Computes the projected screen pixel radius from a 3D world radius and view depth.
+pub fn project_radius(world_radius: f32, view_depth: f32, fov: f32, height: usize) -> f32 {
+    let tan_half = (fov * 0.5).tan();
+    if view_depth <= 1e-4 || tan_half <= 1e-4 {
+        0.0
+    } else {
+        (world_radius / (view_depth * tan_half)) * (height as f32 * 0.5)
     }
 }

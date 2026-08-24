@@ -35,10 +35,17 @@ pub fn render_vdw(ctx: &RenderContext, buffer: &mut Framebuffer) {
         if !visible[atom.index] {
             continue;
         }
-        if let Some(pt) = camera.project(&mats, atom.pos, buffer.width, buffer.height) {
-            let r_world = atom.vdw_radius();
-            let r_world = if r_world > 0.1 { r_world } else { 1.5 };
-            let sphere_r = project_radius(r_world, pt.2, camera.fov, buffer.height);
+        let r_world = {
+            let r = atom.vdw_radius();
+            if r > 0.1 { r } else { 1.5 }
+        };
+        // project_sphere keeps spheres whose center is behind the near plane
+        // but whose surface still crosses it (conservative approximation) --
+        // without this, zooming into a space-filling molecule made spheres pop
+        // out of existence.
+        if let Some((pt, sphere_r)) =
+            camera.project_sphere(&mats, atom.pos, r_world, buffer.width, buffer.height)
+        {
             if sphere_r < 0.4 {
                 continue;
             }

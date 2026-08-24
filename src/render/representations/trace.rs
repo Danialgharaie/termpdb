@@ -71,10 +71,11 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 continue;
             }
 
-            let p1_opt = camera.project(&mats, atom1.pos, buffer.width, buffer.height);
-            let p2_opt = camera.project(&mats, atom2.pos, buffer.width, buffer.height);
-
-            if let (Some(p1), Some(p2)) = (p1_opt, p2_opt) {
+            // Segment clip against the near plane keeps half-behind trace
+            // segments drawn.
+            if let Some((p1, p2)) =
+                camera.project_segment(&mats, atom1.pos, atom2.pos, buffer.width, buffer.height)
+            {
                 let avg_depth = (p1.2 + p2.2) * 0.5;
                 let cyl_r = project_radius(0.35, avg_depth, camera.fov, buffer.height).max(0.6);
 
@@ -93,8 +94,10 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
 
         // Draw joint spheres at guide atom positions
         for (atom, _) in &guide_list {
-            if let Some(pt) = camera.project(&mats, atom.pos, buffer.width, buffer.height) {
-                let sphere_r = project_radius(0.40, pt.2, camera.fov, buffer.height).max(0.7);
+            if let Some((pt, sphere_r)) =
+                camera.project_sphere(&mats, atom.pos, 0.40, buffer.width, buffer.height)
+            {
+                let sphere_r = sphere_r.max(0.7);
                 let color = colors[atom.index];
                 draw_sphere(buffer, pt, sphere_r, color, lighting);
             }
@@ -107,13 +110,14 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
             if !visible[atom.index] {
                 continue;
             }
-            let Some(pt) = camera.project(&mats, atom.pos, buffer.width, buffer.height) else {
-                continue;
-            };
             let r_world = (atom.vdw_radius() * 0.28).clamp(0.35, 0.65);
-            let sphere_r = project_radius(r_world, pt.2, camera.fov, buffer.height).max(0.7);
-            let color = colors[atom.index];
-            draw_sphere(buffer, pt, sphere_r, color, lighting);
+            if let Some((pt, sphere_r)) =
+                camera.project_sphere(&mats, atom.pos, r_world, buffer.width, buffer.height)
+            {
+                let sphere_r = sphere_r.max(0.7);
+                let color = colors[atom.index];
+                draw_sphere(buffer, pt, sphere_r, color, lighting);
+            }
         }
     }
 
@@ -131,10 +135,11 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 continue;
             }
 
-            let p1_opt = camera.project(&mats, atom1.pos, buffer.width, buffer.height);
-            let p2_opt = camera.project(&mats, atom2.pos, buffer.width, buffer.height);
-
-            if let (Some(p1), Some(p2)) = (p1_opt, p2_opt) {
+            // Segment clip against the near plane keeps half-behind ligand
+            // bonds drawn.
+            if let Some((p1, p2)) =
+                camera.project_segment(&mats, atom1.pos, atom2.pos, buffer.width, buffer.height)
+            {
                 let avg_depth = (p1.2 + p2.2) * 0.5;
                 let cyl_r = project_radius(0.18, avg_depth, camera.fov, buffer.height).max(0.5);
 

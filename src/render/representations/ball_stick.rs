@@ -28,9 +28,11 @@ pub fn render_ball_stick(ctx: &RenderContext, buffer: &mut Framebuffer) {
         if !visible[atom.index] {
             continue;
         }
-        if let Some(pt) = camera.project(&mats, atom.pos, buffer.width, buffer.height) {
-            let r_world = 0.38;
-            let sphere_r = project_radius(r_world, pt.2, camera.fov, buffer.height);
+        // project_sphere keeps spheres whose center is behind the near plane
+        // but whose surface still crosses it (conservative approximation).
+        if let Some((pt, sphere_r)) =
+            camera.project_sphere(&mats, atom.pos, 0.38, buffer.width, buffer.height)
+        {
             if sphere_r < 0.4 {
                 continue;
             }
@@ -76,10 +78,10 @@ pub fn render_ball_stick(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 continue;
             }
 
-            let p1_opt = camera.project(&mats, atom1.pos, buffer.width, buffer.height);
-            let p2_opt = camera.project(&mats, atom2.pos, buffer.width, buffer.height);
-
-            if let (Some(p1), Some(p2)) = (p1_opt, p2_opt) {
+            // Segment clip against the near plane keeps half-behind bonds drawn.
+            if let Some((p1, p2)) =
+                camera.project_segment(&mats, atom1.pos, atom2.pos, buffer.width, buffer.height)
+            {
                 let avg_depth = (p1.2 + p2.2) * 0.5;
                 let bond_r = project_radius(0.18, avg_depth, camera.fov, buffer.height).max(0.5);
 

@@ -412,9 +412,11 @@ pub fn render_ribbon(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 min_r,
                 color,
             } => {
-                let pa = camera.project(&mats, *a, buffer.width, buffer.height);
-                let pb = camera.project(&mats, *b, buffer.width, buffer.height);
-                if let (Some(sa), Some(sb)) = (pa, pb) {
+                // Segment clip against the near plane keeps half-behind
+                // cartoon tubes drawn.
+                if let Some((sa, sb)) =
+                    camera.project_segment(&mats, *a, *b, buffer.width, buffer.height)
+                {
                     let avg_depth = (sa.2 + sb.2) * 0.5;
                     let cyl_r =
                         project_radius(*r_world, avg_depth, camera.fov, buffer.height).max(*min_r);
@@ -429,6 +431,9 @@ pub fn render_ribbon(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 normal,
                 color,
             } => {
+                // NOTE: sheet quads still require all four corners to be within
+                // [near, far]; near-clipping quads would need polygon clipping
+                // and is out of scope of the sphere/cylinder near-plane fix.
                 let sl0 = camera.project(&mats, *v0l, buffer.width, buffer.height);
                 let sr0 = camera.project(&mats, *v0r, buffer.width, buffer.height);
                 let sl1 = camera.project(&mats, *v1l, buffer.width, buffer.height);

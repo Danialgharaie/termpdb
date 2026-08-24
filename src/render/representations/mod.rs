@@ -86,13 +86,10 @@ impl RenderMode {
 }
 
 /// Computes the projected screen pixel radius from a 3D world radius and view depth.
+///
+/// Delegates to the canonical implementation in [`crate::render::camera`].
 pub fn project_radius(world_radius: f32, view_depth: f32, fov: f32, height: usize) -> f32 {
-    let tan_half = (fov * 0.5).tan();
-    if view_depth <= 1e-4 || tan_half <= 1e-4 {
-        0.0
-    } else {
-        (world_radius / (view_depth * tan_half)) * (height as f32 * 0.5)
-    }
+    crate::render::camera::project_radius(world_radius, view_depth, fov, height)
 }
 
 /// Linearly interpolates between two RGB pixel colors.
@@ -419,11 +416,14 @@ pub fn render_structure_ctx(ctx: &RenderContext, mode: RenderMode, buffer: &mut 
                     if !ctx.visible[a1.index] || !ctx.visible[a2.index] {
                         continue;
                     }
-                    if let (Some(p1), Some(p2)) = (
-                        ctx.camera
-                            .project(&ctx.mats, a1.pos, buffer.width, buffer.height),
-                        ctx.camera
-                            .project(&ctx.mats, a2.pos, buffer.width, buffer.height),
+                    // Segment clip keeps bonds visible when one endpoint is
+                    // nearer than the near plane.
+                    if let Some((p1, p2)) = ctx.camera.project_segment(
+                        &ctx.mats,
+                        a1.pos,
+                        a2.pos,
+                        buffer.width,
+                        buffer.height,
                     ) {
                         let c1 = ctx.colors[a1.index];
                         crate::render::rasterizer::draw_line_3d(buffer, p1, p2, c1);
