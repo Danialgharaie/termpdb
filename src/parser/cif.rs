@@ -82,6 +82,21 @@ pub fn parse_cif(input: &str) -> Result<Structure> {
                     }
                 }
 
+                // mmCIF loops must be rectangular: a ragged tail would be
+                // silently dropped by integer division, corrupting every
+                // downstream row. Reject instead of truncating. This single
+                // check covers all loop types (rows are sliced here before
+                // dispatching to the parse_*_loop helpers).
+                if values.len() % num_cols != 0 {
+                    return Err(TermPdbError::ParseError(format!(
+                        "Malformed CIF loop: tag '{}' defines {} columns but {} values \
+                         were collected; mmCIF loops must be rectangular",
+                        headers[0],
+                        num_cols,
+                        values.len()
+                    )));
+                }
+
                 let num_rows = values.len() / num_cols;
                 let is_atom_site = headers.iter().any(|h| h.starts_with("_atom_site."));
                 let is_struct_conf = headers.iter().any(|h| h.starts_with("_struct_conf."));
@@ -603,15 +618,21 @@ fn tokenize_cif(input: &str) -> Vec<CifToken> {
             continue;
         }
 
-        // Regular word token
+        // Regular word token. `data_...` is only a data-block marker when it
+        // begins a line (column 0); mid-line occurrences are ordinary values,
+        // otherwise a stray `data_foo` inside loop values would terminate
+        // value collection early and silently shift every subsequent row.
         let start_word = i;
         while i < chars.len() && !chars[i].is_whitespace() && chars[i] != '#' {
             i += 1;
         }
         let word: String = chars[start_word..i].iter().collect();
+        let at_line_start = start_word == 0
+            || chars[start_word - 1] == '\n'
+            || (start_word > 1 && chars[start_word - 1] == '\r' && chars[start_word - 2] == '\n');
         if word.eq_ignore_ascii_case("loop_") {
             tokens.push(CifToken::Loop);
-        } else if word.to_ascii_lowercase().starts_with("data_") {
+        } else if at_line_start && word.to_ascii_lowercase().starts_with("data_") {
             tokens.push(CifToken::Data(word[5..].to_string()));
         } else {
             tokens.push(CifToken::Value(word));

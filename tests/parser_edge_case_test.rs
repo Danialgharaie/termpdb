@@ -3,7 +3,8 @@
 //! These files exist to guarantee the parsers never panic on hostile or
 //! corrupted input: multi-byte UTF-8 characters straddling fixed-column
 //! boundaries, truncated records, non-numeric coordinates, and ragged CIF
-//! loops must all produce either a valid structure or a `TermPdbError`.
+//! loops must all produce either a valid structure or a `TermPdbError`
+//! (ragged CIF loops specifically must be rejected, never silently truncated).
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -142,9 +143,11 @@ HETATM 2 ? é HOH A 2 1.0 1.0 1.0
 }
 
 #[test]
-fn test_ragged_cif_loop_truncates_silently() {
-    // One complete 10-value row followed by orphan values: the incomplete
-    // tail row is dropped by integer division, leaving exactly one atom.
+fn test_ragged_cif_loop_is_rejected() {
+    // 10 headers; 23 values (two complete rows plus a 3-value orphan tail).
+    // Integer division would silently drop the orphan tokens and shift every
+    // downstream row, so the parser must reject the loop outright instead of
+    // truncating.
     let cif = r#"data_RAGGED
 loop_
 _atom_site.group_PDB
@@ -158,10 +161,74 @@ _atom_site.Cartn_x
 _atom_site.Cartn_y
 _atom_site.Cartn_z
 ATOM 1 N CA ALA A 1 0.0 0.0 0.0
-ATOM 2 C
+ATOM 2 C CB ALA A 2 1.0 1.0 1.0
+ATOM 3 O
 "#;
-    let structure = parse_cif(cif).expect("ragged loop must truncate without panicking");
-    assert_eq!(structure.atom_count(), 1);
+    let err = parse_cif(cif).expect_err("ragged loop must be an error, not a silent truncation");
+    match err {
+        TermPdbError::ParseError(msg) => {
+            assert!(
+                msg.contains("_atom_site.group_PDB"),
+                "error must name the first header tag: {msg}"
+            );
+            assert!(
+                msg.contains("10"),
+                "error must name the column count: {msg}"
+            );
+            assert!(msg.contains("23"), "error must name the value count: {msg}");
+        }
+        other => panic!("unexpected error kind: {other:?}"),
+    }
+}
+
+#[test]
+fn test_rectangular_cif_loop_still_parses() {
+    // The hardening must not disturb well-formed loops: three complete
+    // 10-column rows yield three atoms across two chains.
+    let cif = r#"data_OK
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 N CA ALA A 1 0.0 0.0 0.0
+ATOM 2 C CB ALA A 2 1.0 1.0 1.0
+HETATM 3 O O HOH B 1 2.0 2.0 2.0
+"#;
+    let structure = parse_cif(cif).expect("rectangular loop must parse");
+    assert_eq!(structure.atom_count(), 3);
+}
+
+#[test]
+fn test_stray_data_word_mid_values_preserves_row_count() {
+    // `data_...` is a data-block marker only at column 0. Mid-line it is an
+    // ordinary value token, so its appearance inside loop values (here as the
+    // `_atom_site.id` cell of row 2) must neither terminate value collection
+    // early nor drop rows: previously everything from that word onward was
+    // discarded, leaving one atom instead of two.
+    let cif = r#"data_MAIN
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 N CA ALA A 1 0.0 0.0 0.0
+ATOM data_foo C CB ALA B 2 1.0 1.0 1.0
+"#;
+    let structure = parse_cif(cif).expect("stray mid-line data_ word must not truncate the loop");
+    assert_eq!(structure.atom_count(), 2);
 }
 
 #[test]
