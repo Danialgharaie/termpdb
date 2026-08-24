@@ -32,13 +32,125 @@ pub(crate) struct ModelAccum {
     pub serial_to_idx: HashMap<i32, usize>,
 }
 
+/// Ranks alternate-location conformers competing for one atom site.
+///
+/// Lower wins: the blank conformer (`alt_loc == None`, PDB column 17 blank /
+/// mmCIF `label_alt_id` `.` or `?`) is the default deposition choice, `A` is
+/// the conventional primary alternate, and any other identifier comes last.
+fn alt_loc_rank(alt_loc: Option<char>) -> u8 {
+    match alt_loc {
+        None => 0,
+        Some('A') => 1,
+        Some(_) => 2,
+    }
+}
+
+/// Atom-site key used to group alternate-location conformers:
+/// `(chain_id, res_seq, insertion code, atom name)`.
+type SiteKey = (String, i32, Option<char>, String);
+
+/// Keeps exactly one alternate-location conformer per atom site, dropping the rest.
+///
+/// Policy: at most one conformer survives per site key
+/// `(chain_id, res_seq, ins_code, atom name)` — preference order is the blank
+/// conformer, then `'A'`, then the first-encountered alternate. Atoms recorded
+/// without an altloc always win their site, so structures with no alternates
+/// are untouched. Dropped atoms are removed from `atoms` (with indices
+/// compacted and `Atom::index` renumbered), from every residue's
+/// `atom_indices`, and from `serial_to_idx`, so bond detection, rendering, and
+/// atom/residue counts never see duplicate conformers. `Atom::alt_loc` is kept
+/// as-is for the surviving atoms.
+///
+/// Applied identically to the PDB and mmCIF loaders via [`assemble_model`].
+pub(crate) fn keep_one_alt_loc_conformer(accum: &mut ModelAccum) {
+    // Fast path: files without any altloc records need no rework at all.
+    if !accum.atoms.iter().any(|atom| atom.alt_loc.is_some()) {
+        return;
+    }
+
+    // Atom carries no insertion code, so recover the per-atom site insertion
+    // code from the residue grouping built while parsing.
+    let mut ins_codes = vec![None; accum.atoms.len()];
+    for residues in accum.chain_residues.values() {
+        for res in residues {
+            for &idx in &res.atom_indices {
+                if let Some(slot) = ins_codes.get_mut(idx) {
+                    *slot = res.ins_code;
+                }
+            }
+        }
+    }
+
+    // Winning atom position per site: lowest rank, ties (e.g. two `B`
+    // records) broken by first occurrence in file order.
+    let mut winners: HashMap<SiteKey, (u8, usize)> = HashMap::new();
+    for (pos, atom) in accum.atoms.iter().enumerate() {
+        let rank = alt_loc_rank(atom.alt_loc);
+        let key = (
+            atom.chain_id.clone(),
+            atom.res_seq,
+            ins_codes[pos],
+            atom.name.clone(),
+        );
+        match winners.get(&key) {
+            Some(&(best_rank, _)) if best_rank <= rank => {}
+            _ => {
+                winners.insert(key, (rank, pos));
+            }
+        }
+    }
+
+    let atoms = std::mem::take(&mut accum.atoms);
+    let mut keep = vec![false; atoms.len()];
+    for &(_, pos) in winners.values() {
+        keep[pos] = true;
+    }
+
+    let mut remap: HashMap<usize, usize> = HashMap::new();
+    for (pos, mut atom) in atoms.into_iter().enumerate() {
+        if !keep[pos] {
+            continue;
+        }
+        let new_idx = accum.atoms.len();
+        remap.insert(pos, new_idx);
+        atom.index = new_idx;
+        accum.atoms.push(atom);
+    }
+
+    // Compact residue -> atom references; dropped conformers fall out here.
+    for residues in accum.chain_residues.values_mut() {
+        for res in residues {
+            res.atom_indices.retain_mut(|idx| match remap.get(idx) {
+                Some(&new_idx) => {
+                    *idx = new_idx;
+                    true
+                }
+                None => false,
+            });
+        }
+    }
+
+    // Rebuild the serial map from the surviving atoms so CONECT resolution
+    // skips dropped serials and points at compacted indices. Iterating in file
+    // order preserves the parser's last-insert-wins behaviour for duplicates.
+    accum.serial_to_idx = accum
+        .atoms
+        .iter()
+        .map(|atom| (atom.serial, atom.index))
+        .collect();
+}
+
 /// Builds a [`Model`] from parsed atoms/residues and secondary-structure ranges.
 pub(crate) fn assemble_model(
     serial: i32,
-    accum: ModelAccum,
+    mut accum: ModelAccum,
     helices: &[(String, i32, i32)],
     sheets: &[(String, i32, i32)],
 ) -> Model {
+    // Collapse alternate-location conformers before anything (bond detection,
+    // rendering, counts) can observe duplicate atoms.
+    keep_one_alt_loc_conformer(&mut accum);
+
     let ModelAccum {
         atoms,
         chain_order,

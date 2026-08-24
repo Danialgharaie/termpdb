@@ -279,8 +279,14 @@ pub fn parse_pdb(input: &str) -> Result<Structure> {
     let has_ss = !helices.is_empty() || !sheets.is_empty();
     let mut models = Vec::with_capacity(accums.len());
     for (serial, accum) in accums {
-        let serial_to_idx = accum.serial_to_idx.clone();
         let mut model = assemble_model(serial, accum, &helices, &sheets);
+        // Derived after assembly: the altloc policy may have dropped
+        // duplicate conformers, shifting atom indices.
+        let serial_to_idx: HashMap<i32, usize> = model
+            .atoms
+            .iter()
+            .map(|atom| (atom.serial, atom.index))
+            .collect();
         apply_conect(&mut model, &conect_pairs, &serial_to_idx);
         models.push(model);
     }

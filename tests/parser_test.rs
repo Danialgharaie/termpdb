@@ -298,19 +298,23 @@ CONECT    1    3
 END
 "#;
     let structure = parse_pdb(pdb_text).expect("Failed to parse PDB with alt loc and charge");
+    // Altloc policy: one conformer per site, 'A' preferred over 'B', so the
+    // 'B' record is dropped and the zinc ion becomes the second atom.
+    assert_eq!(structure.atom_count(), 2);
     assert_eq!(structure.atoms()[0].alt_loc, Some('A'));
     assert_eq!(structure.atoms()[0].charge, Some(1));
-    assert_eq!(structure.atoms()[1].alt_loc, Some('B'));
-    assert_eq!(structure.atoms()[2].charge, Some(2));
-    assert_eq!(structure.atoms()[2].element.symbol, "Zn");
+    assert_eq!(structure.atoms()[1].res_name, "ZN");
+    assert_eq!(structure.atoms()[1].charge, Some(2));
+    assert_eq!(structure.atoms()[1].element.symbol, "Zn");
 
-    // Verify CONECT bond was added between atom 0 (serial 1) and atom 2 (serial 3)
+    // CONECT still resolves across the filtered atom set: kept serials 1 and
+    // 3 map to compacted indices 0 and 1.
     assert!(
         structure
             .bonds()
             .iter()
-            .any(|b| (b.atom1_idx == 0 && b.atom2_idx == 2)
-                || (b.atom1_idx == 2 && b.atom2_idx == 0))
+            .any(|b| (b.atom1_idx == 0 && b.atom2_idx == 1)
+                || (b.atom1_idx == 1 && b.atom2_idx == 0))
     );
 }
 
@@ -513,4 +517,194 @@ fn test_single_model_file_has_serial_one() {
     assert_eq!(structure.model_count(), 1);
     assert_eq!(structure.active_model_serial(), 1);
     assert!(!structure.has_multiple_models());
+}
+
+/// Altloc filtering fixture. Three residues exercise the whole policy:
+/// - ALA 1: CB has blank + 'B' conformers (the 'B' copy sits ~1.03 Å from the
+///   blank CB and would bond it and C if kept) -> blank wins.
+/// - GLY 2: CA has 'A' + 'B' conformers ('B' would bond the blank C at
+///   ~1.10 Å if kept) -> 'A' wins.
+/// - VAL 3: CG1 exists only as a 'B' conformer -> kept as-is.
+///
+/// CONECT 13->16 crosses both dropped serials (4, 9) and must resolve to the
+/// compacted indices; CONECT 4->1 references a dropped serial and is ignored.
+const ALTLOC_POLICY_PDB: &str = r#"ATOM      1  N   ALA A   1       0.000   0.000   0.000  1.00 10.00           N
+ATOM      2  CA  ALA A   1       1.458   0.000   0.000  1.00 10.00           C
+ATOM      3  CB  ALA A   1       1.988  -0.727   1.132  1.00 10.00           C
+ATOM      4  CB BALA A   1       2.646  -1.288   1.684  0.50 12.00           C
+ATOM      5  C   ALA A   1       2.009   1.420   0.000  1.00 10.00           C
+ATOM      6  O   ALA A   1       1.246   2.389   0.000  1.00 10.00           O
+ATOM      7  N   GLY A   2       0.000  50.000   0.000  1.00 10.00           N
+ATOM      8  CA AGLY A   2       1.458  50.000   0.123  1.00 10.00           C
+ATOM      9  CA BGLY A   2       2.116  50.561   0.675  0.50 12.00           C
+ATOM     10  C   GLY A   2       2.009  51.420   0.000  1.00 10.00           C
+ATOM     11  O   GLY A   2       1.246  52.389   0.000  1.00 10.00           O
+ATOM     12  N   VAL A   3       0.000 100.000   0.000  1.00 10.00           N
+ATOM     13  CA  VAL A   3       1.458 100.000   0.000  1.00 10.00           C
+ATOM     14 CG1 BVAL A   3       1.988  99.273   1.132  1.00 10.00           C
+ATOM     15  C   VAL A   3       2.009 101.420   0.000  1.00 10.00           C
+ATOM     16  O   VAL A   3       1.246 102.389   0.000  1.00 10.00           O
+CONECT   13   16
+CONECT    4    1
+END
+"#;
+
+fn find_atom<'a>(
+    structure: &'a termpdb::Structure,
+    res_seq: i32,
+    name: &str,
+) -> &'a termpdb::model::Atom {
+    structure
+        .atoms()
+        .iter()
+        .find(|atom| atom.res_seq == res_seq && atom.name == name)
+        .unwrap_or_else(|| panic!("missing atom {name} in residue {res_seq}"))
+}
+
+#[test]
+fn test_parse_pdb_altloc_single_conformer_policy() {
+    let structure = parse_pdb(ALTLOC_POLICY_PDB).expect("parse altloc PDB fixture");
+
+    // One conformer per site: 14 atoms survive out of the 16 records.
+    assert_eq!(structure.atom_count(), 14);
+    for (i, atom) in structure.atoms().iter().enumerate() {
+        assert_eq!(atom.index, i, "atom indices must be compacted");
+    }
+
+    // Blank conformer wins where present; occupancy/B prove which record won.
+    let cb = find_atom(&structure, 1, "CB");
+    assert_eq!(cb.alt_loc, None);
+    assert!((cb.occupancy - 1.0).abs() < 1e-4);
+    assert!((cb.b_factor - 10.0).abs() < 1e-4);
+
+    // 'A' wins when there is no blank record.
+    assert_eq!(find_atom(&structure, 2, "CA").alt_loc, Some('A'));
+
+    // A lone 'B' conformer is kept.
+    assert_eq!(find_atom(&structure, 3, "CG1").alt_loc, Some('B'));
+
+    // No duplicate site keys remain.
+    let mut sites: Vec<(i32, &str)> = structure
+        .atoms()
+        .iter()
+        .map(|a| (a.res_seq, a.name.as_str()))
+        .collect();
+    sites.sort();
+    sites.dedup();
+    assert_eq!(sites.len(), 14);
+
+    // Residue -> atom references follow the compacted indices exactly.
+    let chain = structure.get_chain("A").expect("chain A");
+    assert_eq!(chain.residues.len(), 3);
+    let expected_names: Vec<Vec<&str>> = vec![
+        vec!["N", "CA", "CB", "C", "O"],
+        vec!["N", "CA", "C", "O"],
+        vec!["N", "CA", "CG1", "C", "O"],
+    ];
+    for (residue, names) in chain.residues.iter().zip(expected_names) {
+        let got: Vec<&str> = residue
+            .atom_indices
+            .iter()
+            .map(|&idx| structure.atoms()[idx].name.as_str())
+            .collect();
+        assert_eq!(got, names, "residue {}", residue.seq);
+    }
+
+    // Bonds: 11 real covalent bonds among kept atoms plus one from CONECT
+    // (serial 13 -> serial 16). The dropped copies sit 1.03-1.10 Å from their
+    // retained neighbours, so without filtering this count would be higher.
+    assert_eq!(structure.bonds().len(), 12);
+    // CONECT crossing both dropped serials resolves to compacted indices:
+    // serial 13 -> VAL CA (index 10), serial 16 -> VAL O (index 13).
+    assert!(structure.bonds().iter().any(|b| {
+        (b.atom1_idx == 10 && b.atom2_idx == 13) || (b.atom1_idx == 13 && b.atom2_idx == 10)
+    }));
+    // No spurious bond between the retained CB (index 2) and its own residue
+    // C (index 3): only true because the 'B' copy was dropped.
+    assert!(
+        !structure
+            .bonds()
+            .iter()
+            .any(|b| b.atom1_idx == 2 && b.atom2_idx == 3 || b.atom1_idx == 3 && b.atom2_idx == 2)
+    );
+}
+
+/// mmCIF twin of [`ALTLOC_POLICY_PDB`] using `label_alt_id`: `.` marks the
+/// blank conformer, `A`/`B` mark alternates.
+const ALTLOC_POLICY_CIF: &str = r#"data_9alt
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.pdbx_PDB_model_num
+ATOM 1 N N . ALA A 1 0.000 0.000 0.000 1
+ATOM 2 C CA . ALA A 1 1.458 0.000 0.000 1
+ATOM 3 C CB . ALA A 1 1.988 -0.727 1.132 1
+ATOM 4 C CB B ALA A 1 2.646 -1.288 1.684 1
+ATOM 5 C C . ALA A 1 2.009 1.420 0.000 1
+ATOM 6 O O . ALA A 1 1.246 2.389 0.000 1
+ATOM 7 N N . GLY A 2 0.000 50.000 0.000 1
+ATOM 8 C CA A GLY A 2 1.458 50.000 0.123 1
+ATOM 9 C CA B GLY A 2 2.116 50.561 0.675 1
+ATOM 10 C C . GLY A 2 2.009 51.420 0.000 1
+ATOM 11 O O . GLY A 2 1.246 52.389 0.000 1
+ATOM 12 N N . VAL A 3 0.000 100.000 0.000 1
+ATOM 13 C CA . VAL A 3 1.458 100.000 0.000 1
+ATOM 14 C CG1 B VAL A 3 1.988 99.273 1.132 1
+ATOM 15 C C . VAL A 3 2.009 101.420 0.000 1
+ATOM 16 O O . VAL A 3 1.246 102.389 0.000 1
+#
+"#;
+
+#[test]
+fn test_parse_cif_altloc_single_conformer_policy() {
+    let structure = parse_cif(ALTLOC_POLICY_CIF).expect("parse altloc CIF fixture");
+
+    // Same policy outcome as the PDB fixture: 14 of 16 rows survive.
+    assert_eq!(structure.atom_count(), 14);
+    for (i, atom) in structure.atoms().iter().enumerate() {
+        assert_eq!(atom.index, i, "atom indices must be compacted");
+    }
+
+    assert_eq!(find_atom(&structure, 1, "CB").alt_loc, None);
+    assert_eq!(find_atom(&structure, 2, "CA").alt_loc, Some('A'));
+    assert_eq!(find_atom(&structure, 3, "CG1").alt_loc, Some('B'));
+
+    let mut sites: Vec<(i32, &str)> = structure
+        .atoms()
+        .iter()
+        .map(|a| (a.res_seq, a.name.as_str()))
+        .collect();
+    sites.sort();
+    sites.dedup();
+    assert_eq!(sites.len(), 14);
+
+    // Residue grouping survives the index compaction.
+    let chain = structure.get_chain("A").expect("chain A");
+    assert_eq!(chain.residues.len(), 3);
+    let expected_names: Vec<Vec<&str>> = vec![
+        vec!["N", "CA", "CB", "C", "O"],
+        vec!["N", "CA", "C", "O"],
+        vec!["N", "CA", "CG1", "C", "O"],
+    ];
+    for (residue, names) in chain.residues.iter().zip(expected_names) {
+        let got: Vec<&str> = residue
+            .atom_indices
+            .iter()
+            .map(|&idx| structure.atoms()[idx].name.as_str())
+            .collect();
+        assert_eq!(got, names, "residue {}", residue.seq);
+    }
+
+    // Exactly the 11 real covalent bonds; the dropped 'B' copies (1.03 Å from
+    // their retained neighbours) contribute none.
+    assert_eq!(structure.bonds().len(), 11);
 }
