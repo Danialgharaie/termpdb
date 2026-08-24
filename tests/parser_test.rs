@@ -173,6 +173,123 @@ END
 }
 
 #[test]
+fn test_parse_pdb_element_inference_table_before_conventions() {
+    // No element columns: inference must consult the periodic table before the
+    // amino-acid naming conventions, so HG/CD/SE resolve to mercury/cadmium/
+    // selenium instead of hydrogen/carbon/sulfur, while locator-style protein
+    // atom names (HB2, CG2, OD1, SD, NE2, ...) keep their convention elements.
+    let pdb_no_elem = r#"ATOM      1  HG  HG  A   1       1.000   1.000   1.000  1.00 10.00
+ATOM      2  CD  CD  A   2       1.000   1.000   1.000  1.00 10.00
+ATOM      3  SE  MSE A   3       1.000   1.000   1.000  1.00 10.00
+ATOM      4  HB2 ALA A   4       1.000   1.000   1.000  1.00 10.00
+ATOM      5  CG2 THR A   5       1.000   1.000   1.000  1.00 10.00
+ATOM      6  OD1 ASP A   6       1.000   1.000   1.000  1.00 10.00
+ATOM      7  OE1 GLU A   7       1.000   1.000   1.000  1.00 10.00
+ATOM      8  SD  MET A   8       1.000   1.000   1.000  1.00 10.00
+ATOM      9  NE2 HIS A   9       1.000   1.000   1.000  1.00 10.00
+ATOM     10  ND2 ASN A  10       1.000   1.000   1.000  1.00 10.00
+ATOM     11  OG  SER A  11       1.000   1.000   1.000  1.00 10.00
+ATOM     12  CD1 LEU A  12       1.000   1.000   1.000  1.00 10.00
+ATOM     13  CE  MET A  13       1.000   1.000   1.000  1.00 10.00
+ATOM     14  HG1 THR A  14       1.000   1.000   1.000  1.00 10.00
+ATOM     15  HE1 PHE A  15       1.000   1.000   1.000  1.00 10.00
+HETATM   16  CA   CA A  16       1.000   1.000   1.000  1.00 10.00
+END
+"#;
+    let structure = parse_pdb(pdb_no_elem).expect("Failed to parse element-less PDB");
+    let expected = [
+        ("HG", "Hg"), // was Hydrogen ('H' + 'G' convention)
+        ("CD", "Cd"), // was Carbon ('C' + 'D' convention)
+        ("SE", "Se"), // was Sulfur ('S' + 'E' convention), e.g. selenomethionine
+        ("HB2", "H"),
+        ("CG2", "C"),
+        ("OD1", "O"),
+        ("OE1", "O"),
+        ("SD", "S"), // "SD" is no symbol -> convention fires
+        ("NE2", "N"),
+        ("ND2", "N"), // guard: Nd is a valid symbol, locator convention wins
+        ("OG", "O"),  // guard: Og is a valid symbol, locator convention wins
+        ("CD1", "C"), // guard: Cd is a valid symbol, locator convention wins
+        ("CE", "C"),  // guard: Ce is a valid symbol, locator convention wins
+        ("HG1", "H"), // guard: Hg is a valid symbol, locator convention wins
+        ("HE1", "H"), // guard: He is a valid symbol, locator convention wins
+        ("CA", "Ca"), // HETATM calcium ion keeps its element
+    ];
+    assert_eq!(structure.atoms().len(), expected.len());
+    for (atom, (name, symbol)) in structure.atoms().iter().zip(expected.iter()) {
+        assert_eq!(&atom.name, name, "unexpected atom order");
+        assert_eq!(
+            atom.element.symbol, *symbol,
+            "wrong element for atom {}",
+            atom.name
+        );
+    }
+}
+
+#[test]
+fn test_parse_cif_element_inference_without_type_symbol() {
+    // _atom_site.type_symbol column entirely absent: both metal/ion names and
+    // protein locator-style names must infer correctly from the atom name.
+    let cif_no_elem = r#"data_no_elem
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM 1 HG . HG A . 1.000 1.000 1.000 1.00 10.00 1 HG A HG 1
+ATOM 2 CD . CD A . 1.000 1.000 1.000 1.00 10.00 2 CD A CD 1
+ATOM 3 SE . MSE A . 1.000 1.000 1.000 1.00 10.00 3 MSE A SE 1
+ATOM 4 HB2 . ALA A 1 1.000 1.000 1.000 1.00 10.00 4 ALA A HB2 1
+ATOM 5 CG2 . THR A 2 1.000 1.000 1.000 1.00 10.00 5 THR A CG2 1
+ATOM 6 OD1 . ASP A 3 1.000 1.000 1.000 1.00 10.00 6 ASP A OD1 1
+ATOM 7 OE1 . GLU A 4 1.000 1.000 1.000 1.00 10.00 7 GLU A OE1 1
+ATOM 8 SD . MET A 5 1.000 1.000 1.000 1.00 10.00 8 MET A SD 1
+ATOM 9 NE2 . HIS A 6 1.000 1.000 1.000 1.00 10.00 9 HIS A NE2 1
+ATOM 10 ND2 . ASN A 7 1.000 1.000 1.000 1.00 10.00 10 ASN A ND2 1
+ATOM 11 OG . SER A 8 1.000 1.000 1.000 1.00 10.00 11 SER A OG 1
+ATOM 12 CD1 . LEU A 9 1.000 1.000 1.000 1.00 10.00 12 LEU A CD1 1
+#
+"#;
+    let structure = parse_cif(cif_no_elem).expect("Failed to parse CIF without type_symbol");
+    let expected = [
+        ("HG", "Hg"),
+        ("CD", "Cd"),
+        ("SE", "Se"),
+        ("HB2", "H"),
+        ("CG2", "C"),
+        ("OD1", "O"),
+        ("OE1", "O"),
+        ("SD", "S"),
+        ("NE2", "N"),
+        ("ND2", "N"),
+        ("OG", "O"),
+        ("CD1", "C"),
+    ];
+    assert_eq!(structure.atoms().len(), expected.len());
+    for (atom, (name, symbol)) in structure.atoms().iter().zip(expected.iter()) {
+        assert_eq!(&atom.name, name, "unexpected atom order");
+        assert_eq!(
+            atom.element.symbol, *symbol,
+            "wrong element for atom {}",
+            atom.name
+        );
+    }
+}
+
+#[test]
 fn test_parse_pdb_alt_loc_and_charge_and_conect() {
     let pdb_text = r#"ATOM      1  N  AALA A   1       0.000   0.000   0.000  0.50 10.00           N1+
 ATOM      2  N  BALA A   1       0.100   0.100   0.100  0.50 10.00           N1+

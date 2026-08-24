@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::error::{Result, TermPdbError};
 use crate::math::{Mat4, Vec3};
 use crate::model::assembly::affine_from_rows;
-use crate::model::{Assembly, AssemblyGen, Atom, Element, Residue, Structure, element_by_symbol};
-use crate::parser::{ModelAccum, assemble_model};
+use crate::model::{Assembly, AssemblyGen, Atom, Residue, Structure, element_by_symbol};
+use crate::parser::{ModelAccum, assemble_model, infer_element};
 
 #[derive(Debug, PartialEq, Clone)]
 enum CifToken {
@@ -403,10 +403,10 @@ fn parse_atom_site_loop(
             if elem.atomic_number != 0 {
                 elem
             } else {
-                infer_cif_element(atom_name, res_name, is_hetatm)
+                infer_element(atom_name, res_name, is_hetatm)
             }
         } else {
-            infer_cif_element(atom_name, res_name, is_hetatm)
+            infer_element(atom_name, res_name, is_hetatm)
         };
 
         let alt_loc = get_val(row, label_alt_id_col)
@@ -530,96 +530,6 @@ fn parse_struct_sheet_loop(
 
         sheets.push((beg_chain.to_string(), beg_seq, end_seq));
     }
-}
-
-fn infer_cif_element(atom_name: &str, res_name: &str, is_hetatm: bool) -> Element {
-    let trimmed = atom_name.trim();
-    if trimmed.is_empty() {
-        return Element::unknown();
-    }
-
-    let cleaned = trimmed.trim_start_matches(|c: char| c.is_ascii_digit());
-    if cleaned.is_empty() {
-        return Element::unknown();
-    }
-
-    let res_trimmed = res_name.trim();
-    if cleaned.eq_ignore_ascii_case("CA")
-        && !is_hetatm
-        && !res_trimmed.eq_ignore_ascii_case("CA")
-        && !res_trimmed.eq_ignore_ascii_case("CAL")
-    {
-        return element_by_symbol("C");
-    }
-
-    // Check 2-letter element matches if cleaned has at least two characters.
-    // Index by chars, not bytes: atom names may contain non-ASCII characters
-    // and byte slicing would panic on non-char boundaries.
-    let mut chars = cleaned.chars();
-    let first_char = chars.next();
-    let second_char = chars.next().map(|c| c.to_ascii_uppercase());
-
-    if let (Some(first_char), Some(second_char)) = (first_char, second_char) {
-        if (first_char == 'H' || first_char == 'h')
-            && matches!(
-                second_char,
-                'B' | 'G' | 'D' | 'E' | 'Z' | 'H' | 'Q' | '1' | '2' | '3'
-            )
-        {
-            return element_by_symbol("H");
-        }
-        if (first_char == 'C' || first_char == 'c')
-            && matches!(
-                second_char,
-                'A' | 'B' | 'G' | 'D' | 'E' | 'Z' | 'H' | '1' | '2' | '3' | '\'' | '*'
-            )
-        {
-            return element_by_symbol("C");
-        }
-        if (first_char == 'N' || first_char == 'n')
-            && matches!(second_char, 'E' | 'D' | 'H' | 'Z' | '1' | '2' | '3')
-        {
-            return element_by_symbol("N");
-        }
-        if (first_char == 'O' || first_char == 'o')
-            && matches!(
-                second_char,
-                'G' | 'D' | 'E' | 'H' | 'X' | 'P' | '1' | '2' | '3' | '\'' | '*'
-            )
-        {
-            return element_by_symbol("O");
-        }
-        if (first_char == 'S' || first_char == 's')
-            && matches!(second_char, 'D' | 'G' | 'E' | '1' | '2' | '3')
-        {
-            return element_by_symbol("S");
-        }
-
-        let elem2_end = cleaned
-            .char_indices()
-            .nth(2)
-            .map(|(i, _)| i)
-            .unwrap_or(cleaned.len());
-        let candidate2 = &cleaned[..elem2_end];
-        let elem2 = element_by_symbol(candidate2);
-        if elem2.atomic_number != 0 {
-            return elem2;
-        }
-    }
-
-    // Check 1-letter element
-    let elem1_end = cleaned
-        .char_indices()
-        .nth(1)
-        .map(|(i, _)| i)
-        .unwrap_or(cleaned.len());
-    let candidate1 = &cleaned[..elem1_end];
-    let elem1 = element_by_symbol(candidate1);
-    if elem1.atomic_number != 0 {
-        return elem1;
-    }
-
-    Element::unknown()
 }
 
 fn tokenize_cif(input: &str) -> Vec<CifToken> {
