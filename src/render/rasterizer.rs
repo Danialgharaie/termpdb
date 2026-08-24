@@ -465,6 +465,178 @@ pub fn draw_cylinder(
     }
 }
 
+/// Band-local twin of [`draw_line_3d`] for one horizontal [`FramebufferBand`].
+///
+/// The screen clip and the step budget are computed against the FULL frame
+/// (`band.width` x `full_height`, where `full_height` is the parent
+/// framebuffer's pixel height), so every sampled point -- and therefore every
+/// written pixel -- matches the serial path bit-for-bit. Only the final store
+/// is translated into band-local coordinates. The sampled step range is then
+/// narrowed to the band's row window (rounding-safe by construction): the
+/// skipped samples all fall outside the band and would have been rejected by
+/// `set_pixel` anyway, so thin lines cost O(their slice of the frame) per band
+/// instead of O(the whole diagonal).
+pub fn draw_line_3d_band(
+    band: &mut crate::render::buffer::FramebufferBand<'_>,
+    p1_screen: ScreenPoint,
+    p2_screen: ScreenPoint,
+    color: PixelColor,
+    full_height: usize,
+) {
+    let Some((a, b)) = clip_segment_to_screen(p1_screen, p2_screen, band.width, full_height) else {
+        return;
+    };
+    let (x1, y1, z1) = a;
+    let (x2, y2, z2) = b;
+
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let dz = z2 - z1;
+
+    let steps = (dx.abs().max(dy.abs()).ceil() as usize)
+        .min(max_line_steps(band.width, full_height))
+        .max(1);
+    let steps_f = steps as f32;
+
+    let x_step = dx / steps_f;
+    let y_step = dy / steps_f;
+    let z_step = dz / steps_f;
+
+    // Narrow the step loop to samples that can land on a row this band owns.
+    // Sampled points move monotonically in y, so sample i touches global row
+    // round(y1 + i * y_step); inverting the band's row interval with a >= 1 px
+    // safety margin (rounding + floor/ceil widening) yields a conservative
+    // index window. Pixels written are identical to iterating every step.
+    let y_top = band.y_offset as f32;
+    let y_bot = (band.y_offset + band.height) as f32;
+    let (first, last) = if y_step == 0.0 {
+        if y1 < y_top - 1.0 || y1 > y_bot + 1.0 {
+            return;
+        }
+        (0, steps)
+    } else {
+        let s = (y_top - 2.0 - y1) / y_step;
+        let e = (y_bot + 2.0 - y1) / y_step;
+        let (lo, hi) = if y_step > 0.0 { (s, e) } else { (e, s) };
+        let first = (lo.floor().max(0.0) as usize).min(steps);
+        let last = (hi.ceil().max(0.0) as usize).min(steps);
+        (first, last)
+    };
+
+    for i in first..=last {
+        let fi = i as f32;
+        let x = (x1 + fi * x_step).round() as i32;
+        let y = (y1 + fi * y_step).round() as i32;
+        let z = z1 + fi * z_step;
+
+        band.set_pixel(x, y - band.y_offset as i32, z, color);
+    }
+}
+
+/// Rasterizes a thick 3D cylinder/capsule into one horizontal [`FramebufferBand`].
+///
+/// Band-aware mirror of [`draw_cylinder`] for the parallel bond passes. Every
+/// floating-point expression (axis projection, analytical depth, shading) is
+/// computed in FULL-frame screen coordinates exactly like the serial call --
+/// shifting endpoints into band space first would change the rounding of the
+/// axis projection and break bit-exact parity -- and only the final store is
+/// translated onto the band's slices. The row range is simply clamped to the
+/// band instead of the whole frame. `full_height` is the parent framebuffer's
+/// pixel height, used only by the thin-line fallback so its screen clip
+/// matches [`draw_line_3d`] exactly.
+pub fn draw_cylinder_band(
+    band: &mut crate::render::buffer::FramebufferBand<'_>,
+    p1_screen: ScreenPoint,
+    p2_screen: ScreenPoint,
+    radius_screen: f32,
+    color: PixelColor,
+    lighting: &Lighting,
+    full_height: usize,
+) {
+    if radius_screen <= 0.5 {
+        draw_line_3d_band(band, p1_screen, p2_screen, color, full_height);
+        return;
+    }
+
+    let (x1, y1, z1) = p1_screen;
+    let (x2, y2, z2) = p2_screen;
+    let r = radius_screen;
+    let r_sq = r * r;
+
+    let min_x = (x1.min(x2) - r).floor() as i32;
+    let max_x = (x1.max(x2) + r).ceil() as i32;
+    let min_y = (y1.min(y2) - r).floor() as i32;
+    let max_y = (y1.max(y2) + r).ceil() as i32;
+
+    let min_x = min_x.max(0);
+    let max_x = max_x.min((band.width as i32) - 1);
+    // Clamp rows to this band's global y range instead of the whole frame.
+    let min_y = min_y.max(band.y_offset as i32);
+    let max_y = max_y.min((band.y_offset + band.height) as i32 - 1);
+
+    if min_x > max_x || min_y > max_y {
+        return;
+    }
+
+    let ab_x = x2 - x1;
+    let ab_y = y2 - y1;
+    let len_sq = ab_x * ab_x + ab_y * ab_y;
+    let dz_axis = z2 - z1;
+    let inv_r = 1.0 / r;
+
+    let min_depth = z1.min(z2) - r;
+    let max_depth = z1.max(z2) + r;
+    // Nearest possible z of this capsule. Cheap early reject for occluded pixels.
+    let z_near = min_depth;
+
+    let width = band.width;
+    let y_base = band.y_offset;
+    let depth = band.depth.as_mut_ptr();
+    let pixels = band.pixels.as_mut_ptr();
+
+    for y in min_y..=max_y {
+        let py = y as f32 + 0.5;
+        let ap_y = py - y1;
+        let row = (y as usize - y_base) * width;
+        for x in min_x..=max_x {
+            // SAFETY: x in [0, width-1] and y-y_base in [0, band.height-1]
+            // (clamped above), so the band-local index is in bounds.
+            let idx = row + x as usize;
+            let depth_cur = unsafe { *depth.add(idx) };
+            if z_near < depth_cur {
+                let px = x as f32 + 0.5;
+                let ap_x = px - x1;
+
+                let t = if len_sq > 1e-6 {
+                    ((ap_x * ab_x + ap_y * ab_y) / len_sq).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                let qx = x1 + t * ab_x;
+                let qy = y1 + t * ab_y;
+
+                let dx = px - qx;
+                let dy = py - qy;
+                let dist_sq = dx * dx + dy * dy;
+
+                if dist_sq <= r_sq {
+                    let dz = (r_sq - dist_sq).sqrt();
+                    let z = (z1 + t * dz_axis) - dz;
+                    if z < depth_cur {
+                        let normal = Vec3::new(dx * inv_r, -dy * inv_r, dz * inv_r);
+                        let lit_color = lighting.shade(normal, z, color, min_depth, max_depth);
+                        unsafe {
+                            *depth.add(idx) = z;
+                            *pixels.add(idx) = lit_color;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Rasterizes a 3D triangle with barycentric depth interpolation and Lambertian lighting.
 ///
 /// `v1`, `v2`, `v3`: `(screen_x, screen_y, view_depth_z)`

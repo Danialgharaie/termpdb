@@ -6,8 +6,10 @@
 use crate::model::Bond;
 use crate::model::bond::BondDetector;
 use crate::render::buffer::Framebuffer;
-use crate::render::rasterizer::{draw_cylinder, draw_sphere};
-use crate::render::representations::{LodLevel, RenderContext, project_radius};
+use crate::render::rasterizer::draw_sphere;
+use crate::render::representations::{
+    BandPrimitive, LodLevel, RenderContext, draw_band_primitives, project_radius,
+};
 
 /// Renders the molecular structure in Ball and Stick mode.
 pub fn render_ball_stick(ctx: &RenderContext, buffer: &mut Framebuffer) {
@@ -70,6 +72,12 @@ pub fn render_ball_stick(ctx: &RenderContext, buffer: &mut Framebuffer) {
         &detected_bonds
     };
 
+    // Single-threaded projection pass: collect every drawable cylinder (split-
+    // color bonds become two half-cylinders, in draw order) with its
+    // screen-space y extent so the band pass can reject whole primitives per
+    // row band in O(1). Projection happens once up front -- per-band loops
+    // only rasterize.
+    let mut prims: Vec<BandPrimitive> = Vec::with_capacity(bonds.len());
     for bond in bonds {
         if bond.atom1_idx < structure.atoms().len() && bond.atom2_idx < structure.atoms().len() {
             let atom1 = &structure.atoms()[bond.atom1_idx];
@@ -89,13 +97,30 @@ pub fn render_ball_stick(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 let c2 = colors[atom2.index];
 
                 if c1 == c2 {
-                    draw_cylinder(buffer, p1, p2, bond_r, c1, lighting);
+                    prims.push(BandPrimitive::Cylinder {
+                        p1,
+                        p2,
+                        radius: bond_r,
+                        color: c1,
+                    });
                 } else {
                     let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
-                    draw_cylinder(buffer, p1, pmid, bond_r, c1, lighting);
-                    draw_cylinder(buffer, pmid, p2, bond_r, c2, lighting);
+                    prims.push(BandPrimitive::Cylinder {
+                        p1,
+                        p2: pmid,
+                        radius: bond_r,
+                        color: c1,
+                    });
+                    prims.push(BandPrimitive::Cylinder {
+                        p1: pmid,
+                        p2,
+                        radius: bond_r,
+                        color: c2,
+                    });
                 }
             }
         }
     }
+
+    draw_band_primitives(buffer, &prims, lighting);
 }

@@ -25,6 +25,10 @@ use crate::render::buffer::{Framebuffer, PixelColor};
 use crate::render::camera::{Camera, CameraMatrices};
 use crate::render::color::{ColorScheme, ColorStats, color_for_atom_with_stats};
 use crate::render::lighting::Lighting;
+use crate::render::rasterizer::{
+    ScreenPoint, draw_cylinder, draw_cylinder_band, draw_line_3d, draw_line_3d_band, draw_sphere,
+    draw_sphere_band,
+};
 
 /// Available molecular representation rendering modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, clap::ValueEnum)]
@@ -90,6 +94,178 @@ impl RenderMode {
 /// Delegates to the canonical implementation in [`crate::render::camera`].
 pub fn project_radius(world_radius: f32, view_depth: f32, fov: f32, height: usize) -> f32 {
     crate::render::camera::project_radius(world_radius, view_depth, fov, height)
+}
+
+/// One drawable screen-space primitive collected by the single-threaded
+/// projection pass of a bond/cylinder-dominated representation (Ball & Stick
+/// bonds, Trace tubes and ligands, Wireframe lines).
+///
+/// Endpoints are exactly the values the serial rasterizers would receive; the
+/// band-parallel path re-derives everything it needs per band, which is what
+/// keeps its output pixel-identical to [`draw_band_primitives_serial`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BandPrimitive {
+    /// Thick shaded capsule between two screen points. Radii `<= 0.5` px fall
+    /// back to a 1-px line inside the rasterizer, exactly like `draw_cylinder`.
+    Cylinder {
+        p1: ScreenPoint,
+        p2: ScreenPoint,
+        radius: f32,
+        color: PixelColor,
+    },
+    /// 1-px depth-tested line (wireframe bonds).
+    Line {
+        p1: ScreenPoint,
+        p2: ScreenPoint,
+        color: PixelColor,
+    },
+    /// Analytical shaded sphere (trace joints / ligand atoms).
+    Sphere {
+        center: ScreenPoint,
+        radius: f32,
+        color: PixelColor,
+    },
+}
+
+impl BandPrimitive {
+    /// Conservative screen-space vertical extent `(y_min, y_max)` of the
+    /// primitive, used for O(1) per-band rejection in the parallel pass.
+    ///
+    /// The bounds are deliberately loose (lines pad by 1 px for Bresenham
+    /// rounding): a band whose row range cannot contain a written pixel may be
+    /// visited needlessly, but a band containing at least one writable pixel
+    /// is never skipped. That one-sided guarantee is what makes the per-band
+    /// cull safe for bit-exact parity with the serial pass.
+    fn y_range(&self) -> (f32, f32) {
+        match *self {
+            BandPrimitive::Cylinder { p1, p2, radius, .. } => {
+                (p1.1.min(p2.1) - radius, p1.1.max(p2.1) + radius)
+            }
+            BandPrimitive::Line { p1, p2, .. } => (p1.1.min(p2.1) - 1.0, p1.1.max(p2.1) + 1.0),
+            BandPrimitive::Sphere { center, radius, .. } => (center.1 - radius, center.1 + radius),
+        }
+    }
+}
+
+/// Draws collected primitives single-threaded in collection order.
+///
+/// Reference path for the band-parallel renderer (and its fallback for tiny
+/// frames / small batches): it replays each primitive through the ordinary
+/// whole-frame rasterizers exactly like the pre-parallel inline bond loops did.
+pub fn draw_band_primitives_serial(
+    buffer: &mut Framebuffer,
+    prims: &[BandPrimitive],
+    lighting: &Lighting,
+) {
+    for &prim in prims {
+        match prim {
+            BandPrimitive::Cylinder {
+                p1,
+                p2,
+                radius,
+                color,
+            } => {
+                draw_cylinder(buffer, p1, p2, radius, color, lighting);
+            }
+            BandPrimitive::Line { p1, p2, color } => {
+                draw_line_3d(buffer, p1, p2, color);
+            }
+            BandPrimitive::Sphere {
+                center,
+                radius,
+                color,
+            } => {
+                draw_sphere(buffer, center, radius, color, lighting);
+            }
+        }
+    }
+}
+
+/// Band-parallel twin of [`draw_band_primitives_serial`].
+///
+/// Splits the framebuffer into horizontal bands with `Framebuffer::par_bands_mut`,
+/// then scatters every primitive into the bands its y-range intersects (a
+/// single-threaded O(primitives) pass that keeps collection order inside each
+/// bucket). Each band is drawn independently by rayon, visiting exactly the
+/// primitives that can touch its rows, in the same order the serial pass used.
+/// Because bands own disjoint rows, every pixel sees the same sequence of
+/// depth tests as the serial pass -- the two produce identical framebuffers.
+pub fn draw_band_primitives_parallel(
+    buffer: &mut Framebuffer,
+    prims: &[BandPrimitive],
+    lighting: &Lighting,
+) {
+    if buffer.width == 0 || buffer.height == 0 || prims.is_empty() {
+        return;
+    }
+
+    const BAND_HEIGHT: usize = 16;
+    let full_height = buffer.height;
+    let mut bands = buffer.par_bands_mut(BAND_HEIGHT);
+
+    // Scatter pass: bucket primitives per band. Band b covers global rows
+    // [b * BAND_HEIGHT, (b + 1) * BAND_HEIGHT); a primitive intersects it iff
+    // y_max >= b * BAND_HEIGHT && y_min < (b + 1) * BAND_HEIGHT, which is
+    // exactly the clamped band range floor(y_min / BAND_HEIGHT)
+    // ..= floor(y_max / BAND_HEIGHT). Pushing in collection order keeps each
+    // bucket in serial visitation order.
+    let band_count = bands.len();
+    let mut buckets: Vec<Vec<&BandPrimitive>> = vec![Vec::new(); band_count];
+    for prim in prims {
+        let (y_min, y_max) = prim.y_range();
+        let first = ((y_min.max(0.0) as usize) / BAND_HEIGHT).min(band_count - 1);
+        let last = ((y_max.max(0.0) as usize) / BAND_HEIGHT).min(band_count - 1);
+        for bucket in &mut buckets[first..=last] {
+            bucket.push(prim);
+        }
+    }
+
+    use rayon::prelude::*;
+    bands.par_iter_mut().enumerate().for_each(|(i, band)| {
+        for prim in &buckets[i] {
+            match **prim {
+                BandPrimitive::Cylinder {
+                    p1,
+                    p2,
+                    radius,
+                    color,
+                } => {
+                    draw_cylinder_band(band, p1, p2, radius, color, lighting, full_height);
+                }
+                BandPrimitive::Line { p1, p2, color } => {
+                    draw_line_3d_band(band, p1, p2, color, full_height);
+                }
+                BandPrimitive::Sphere {
+                    center,
+                    radius,
+                    color,
+                } => {
+                    draw_sphere_band(band, center, radius, color, lighting);
+                }
+            }
+        }
+    });
+}
+
+/// Draws collected primitives, choosing the band-parallel path when the frame
+/// spans multiple bands and there are enough primitives to amortize the split
+/// (same heuristic as the sphere passes).
+pub(crate) fn draw_band_primitives(
+    buffer: &mut Framebuffer,
+    prims: &[BandPrimitive],
+    lighting: &Lighting,
+) {
+    // Same banding as `Framebuffer::par_bands_mut` with a 16-row band height.
+    let band_count = if buffer.width == 0 {
+        0
+    } else {
+        buffer.height.div_ceil(16)
+    };
+    if band_count > 1 && prims.len() > 50 {
+        draw_band_primitives_parallel(buffer, prims, lighting);
+    } else {
+        draw_band_primitives_serial(buffer, prims, lighting);
+    }
 }
 
 /// Linearly interpolates between two RGB pixel colors.
@@ -409,6 +585,10 @@ pub fn render_structure_ctx(ctx: &RenderContext, mode: RenderMode, buffer: &mut 
         RenderMode::Vdw => vdw::render_vdw(ctx, buffer),
         RenderMode::Wireframe => {
             let atoms = ctx.structure.atoms();
+            // Projection pass: collect one line primitive per visible bond
+            // (in bond order), then hand the list to the band-parallel
+            // rasterizer.
+            let mut prims: Vec<BandPrimitive> = Vec::new();
             for bond in ctx.structure.bonds() {
                 if bond.atom1_idx < atoms.len() && bond.atom2_idx < atoms.len() {
                     let a1 = &atoms[bond.atom1_idx];
@@ -426,10 +606,11 @@ pub fn render_structure_ctx(ctx: &RenderContext, mode: RenderMode, buffer: &mut 
                         buffer.height,
                     ) {
                         let c1 = ctx.colors[a1.index];
-                        crate::render::rasterizer::draw_line_3d(buffer, p1, p2, c1);
+                        prims.push(BandPrimitive::Line { p1, p2, color: c1 });
                     }
                 }
             }
+            draw_band_primitives(buffer, &prims, ctx.lighting);
         }
     }
 }

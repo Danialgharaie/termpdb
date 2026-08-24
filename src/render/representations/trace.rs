@@ -6,8 +6,9 @@
 use crate::model::atom::Atom;
 use crate::model::residue::Residue;
 use crate::render::buffer::Framebuffer;
-use crate::render::rasterizer::{draw_cylinder, draw_sphere};
-use crate::render::representations::{RenderContext, project_radius};
+use crate::render::representations::{
+    BandPrimitive, RenderContext, draw_band_primitives, project_radius,
+};
 
 /// Maximum distance in A between consecutive guide atoms before assuming a chain break.
 pub const MAX_TRACE_BOND_DISTANCE: f32 = 8.0;
@@ -49,7 +50,14 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
     let colors = ctx.colors;
     let visible = ctx.visible;
 
-    // 1. Render backbone trace for each chain
+    // Single-threaded projection pass: collect every drawable primitive (trace
+    // cylinders, joint spheres, ligand spheres, ligand bonds) in exact draw
+    // order, then hand the list to the band-parallel rasterizer. The band pass
+    // visits primitives in collection order on disjoint row bands, so the
+    // output stays pixel-identical to drawing them one by one.
+    let mut prims: Vec<BandPrimitive> = Vec::new();
+
+    // 1. Backbone trace for each chain
     for chain in structure.chains() {
         let mut guide_list: Vec<(&Atom, &Residue)> = Vec::with_capacity(chain.residues.len());
 
@@ -62,7 +70,7 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
             }
         }
 
-        // Draw connecting cylinders between consecutive guide atoms
+        // Connecting cylinders between consecutive guide atoms
         for window in guide_list.windows(2) {
             let (atom1, _) = window[0];
             let (atom2, _) = window[1];
@@ -83,11 +91,26 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 let c2 = colors[atom2.index];
 
                 if c1 == c2 {
-                    draw_cylinder(buffer, p1, p2, cyl_r, c1, lighting);
+                    prims.push(BandPrimitive::Cylinder {
+                        p1,
+                        p2,
+                        radius: cyl_r,
+                        color: c1,
+                    });
                 } else {
                     let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
-                    draw_cylinder(buffer, p1, pmid, cyl_r, c1, lighting);
-                    draw_cylinder(buffer, pmid, p2, cyl_r, c2, lighting);
+                    prims.push(BandPrimitive::Cylinder {
+                        p1,
+                        p2: pmid,
+                        radius: cyl_r,
+                        color: c1,
+                    });
+                    prims.push(BandPrimitive::Cylinder {
+                        p1: pmid,
+                        p2,
+                        radius: cyl_r,
+                        color: c2,
+                    });
                 }
             }
         }
@@ -99,7 +122,11 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
             {
                 let sphere_r = sphere_r.max(0.7);
                 let color = colors[atom.index];
-                draw_sphere(buffer, pt, sphere_r, color, lighting);
+                prims.push(BandPrimitive::Sphere {
+                    center: pt,
+                    radius: sphere_r,
+                    color,
+                });
             }
         }
     }
@@ -116,7 +143,11 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
             {
                 let sphere_r = sphere_r.max(0.7);
                 let color = colors[atom.index];
-                draw_sphere(buffer, pt, sphere_r, color, lighting);
+                prims.push(BandPrimitive::Sphere {
+                    center: pt,
+                    radius: sphere_r,
+                    color,
+                });
             }
         }
     }
@@ -147,13 +178,30 @@ pub fn render_trace(ctx: &RenderContext, buffer: &mut Framebuffer) {
                 let c2 = colors[atom2.index];
 
                 if c1 == c2 {
-                    draw_cylinder(buffer, p1, p2, cyl_r, c1, lighting);
+                    prims.push(BandPrimitive::Cylinder {
+                        p1,
+                        p2,
+                        radius: cyl_r,
+                        color: c1,
+                    });
                 } else {
                     let pmid = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5, avg_depth);
-                    draw_cylinder(buffer, p1, pmid, cyl_r, c1, lighting);
-                    draw_cylinder(buffer, pmid, p2, cyl_r, c2, lighting);
+                    prims.push(BandPrimitive::Cylinder {
+                        p1,
+                        p2: pmid,
+                        radius: cyl_r,
+                        color: c1,
+                    });
+                    prims.push(BandPrimitive::Cylinder {
+                        p1: pmid,
+                        p2,
+                        radius: cyl_r,
+                        color: c2,
+                    });
                 }
             }
         }
     }
+
+    draw_band_primitives(buffer, &prims, lighting);
 }
