@@ -2,6 +2,9 @@
 name = "termpdb"
 version = "0.1.0"
 edition = "2024"
+description = "3D molecular structure viewer in your terminal: PDB/mmCIF software rasterizer with ribbon, ball-and-stick and VDW representations"
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 ratatui = "0.29"
