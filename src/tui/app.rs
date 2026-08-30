@@ -11,9 +11,9 @@ use ratatui::widgets::Paragraph;
 use crate::math::Vec3;
 use crate::model::{Interaction, Structure};
 use crate::render::{
-    Camera, ColorScheme, Framebuffer, Lighting, LodMode, PixelColor, RenderContext, RenderMode,
-    RibbonPrimitive, Visibility, build_render_cache, build_ribbon_geometry, draw_selection_markers,
-    render_structure_ctx,
+    Camera, ColorScheme, Framebuffer, GraphicsBackend, Lighting, LodMode, PixelColor,
+    RenderContext, RenderMode, RibbonPrimitive, Visibility, build_render_cache,
+    build_ribbon_geometry, draw_selection_markers, render_structure_ctx,
 };
 use crate::select::{Selection, parse_atom_spec, pick_atom_at_screen, resolve_atom};
 use crate::tui::events::{AppAction, MouseState, handle_key_event, handle_mouse_event};
@@ -33,6 +33,8 @@ pub struct App {
     pub render_mode: RenderMode,
     /// Active color scheme
     pub color_scheme: ColorScheme,
+    /// Active graphics rendering backend (HalfBlock vs Kitty)
+    pub graphics_backend: GraphicsBackend,
     /// Whether automatic turntable spin is active
     pub auto_spin: bool,
     /// Spin rotation speed factor
@@ -143,6 +145,7 @@ impl App {
             lighting,
             render_mode: initial_mode,
             color_scheme: initial_color,
+            graphics_backend: GraphicsBackend::HalfBlock,
             auto_spin,
             spin_speed: 1.0,
             show_help: false,
@@ -227,9 +230,80 @@ impl App {
         self
     }
 
+    /// Sets the active graphics backend.
+    pub fn with_graphics_backend(mut self, backend: GraphicsBackend) -> Self {
+        self.graphics_backend = backend;
+        self
+    }
+
     /// Sets the spin speed factor.
     pub fn set_spin_speed(&mut self, speed: f32) {
         self.spin_speed = speed;
+    }
+
+    /// Sets the active graphics backend.
+    pub fn set_graphics_backend(&mut self, backend: GraphicsBackend) {
+        if self.graphics_backend != backend {
+            let was_kitty = self.graphics_backend.is_kitty();
+            self.graphics_backend = backend;
+            if was_kitty && !self.graphics_backend.is_kitty() {
+                use std::io::Write;
+                let delete_seq = crate::render::encode_kitty_delete(None);
+                let _ = std::io::stdout().write_all(delete_seq.as_bytes());
+                let _ = std::io::stdout().flush();
+            }
+            self.needs_rerender = true;
+            self.needs_redraw = true;
+        }
+    }
+
+    /// Toggles between HalfBlock and Kitty Graphics Protocol rendering backends.
+    pub fn toggle_graphics_backend(&mut self) {
+        let was_kitty = self.graphics_backend.is_kitty();
+        self.graphics_backend.toggle();
+        if was_kitty && !self.graphics_backend.is_kitty() {
+            use std::io::Write;
+            let delete_seq = crate::render::encode_kitty_delete(None);
+            let _ = std::io::stdout().write_all(delete_seq.as_bytes());
+            let _ = std::io::stdout().flush();
+        }
+        self.needs_rerender = true;
+        self.needs_redraw = true;
+    }
+
+    /// Resizes the framebuffer to match the specified terminal column and row dimensions.
+    pub fn resize_framebuffer(&mut self, width: u16, height: u16) {
+        if self.graphics_backend.is_kitty() {
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let pixel_w = (width as u32 * cell_w).max(1) as usize;
+            let pixel_h = (height as u32 * cell_h).max(1) as usize;
+            self.framebuffer.resize(pixel_w, pixel_h);
+        } else {
+            self.framebuffer
+                .resize(width as usize, (height * 2) as usize);
+        }
+    }
+
+    /// Emits the in-band Kitty graphics escape sequence for the current framebuffer placed over viewport_area.
+    pub fn emit_kitty_frame(&self) {
+        if self.viewport_area.width == 0 || self.viewport_area.height == 0 {
+            return;
+        }
+        let rgba = self.framebuffer.to_rgba_bytes();
+        let seq = crate::render::encode_kitty_graphics_rgba(
+            self.framebuffer.width as u32,
+            self.framebuffer.height as u32,
+            self.viewport_area.width,
+            self.viewport_area.height,
+            self.viewport_area.x,
+            self.viewport_area.y,
+            -1,
+            1,
+            &rgba,
+        );
+        use std::io::Write;
+        let _ = std::io::stdout().write_all(seq.as_bytes());
+        let _ = std::io::stdout().flush();
     }
 
     /// Dispatches an `AppAction` to update app state or camera.
@@ -341,6 +415,7 @@ impl App {
             AppAction::ToggleSsao => {
                 self.postprocess_config.ssao = !self.postprocess_config.ssao;
             }
+            AppAction::ToggleGraphicsBackend => self.toggle_graphics_backend(),
             AppAction::ToggleInteractions => {
                 self.show_interactions = !self.show_interactions;
             }
@@ -506,8 +581,22 @@ impl App {
         if col >= area.x + area.width || row >= area.y + area.height {
             return;
         }
-        let sx = (col - area.x) as f32 + 0.5;
-        let sy = ((row - area.y) as f32) * 2.0 + 1.0;
+        let (sx, sy) = if self.graphics_backend.is_kitty() {
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let px = (col.saturating_sub(area.x) as u32 * cell_w + cell_w / 2) as f32;
+            let py = (row.saturating_sub(area.y) as u32 * cell_h + cell_h / 2) as f32;
+            (px, py)
+        } else {
+            let sx = (col - area.x) as f32 + 0.5;
+            let sy = ((row - area.y) as f32) * 2.0 + 1.0;
+            (sx, sy)
+        };
+        let pick_radius = if self.graphics_backend.is_kitty() {
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            (cell_w.max(cell_h) as f32) * 1.5
+        } else {
+            6.0
+        };
         if let Some(idx) = pick_atom_at_screen(
             &self.structure,
             &self.camera,
@@ -516,7 +605,7 @@ impl App {
             self.framebuffer.height,
             sx,
             sy,
-            6.0,
+            pick_radius,
         ) {
             self.selection.pick(idx);
         }
@@ -552,8 +641,15 @@ impl App {
 
     /// Re-renders the 3D scene into the software framebuffer matching viewport dimensions.
     pub fn render_scene(&mut self, width: usize, height: usize) {
-        let pixel_width = width;
-        let pixel_height = height * 2;
+        let (pixel_width, pixel_height) = if self.graphics_backend.is_kitty() {
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            (
+                (width as u32 * cell_w).max(1) as usize,
+                (height as u32 * cell_h).max(1) as usize,
+            )
+        } else {
+            (width, height * 2)
+        };
 
         if pixel_width == 0 || pixel_height == 0 {
             return;
@@ -711,17 +807,36 @@ impl App {
         self.viewport_area = chunks[1];
         let v_width = chunks[1].width as usize;
         let v_height = chunks[1].height as usize;
+        let expected_size = if self.graphics_backend.is_kitty() {
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            (
+                (v_width as u32 * cell_w).max(1) as usize,
+                (v_height as u32 * cell_h).max(1) as usize,
+            )
+        } else {
+            (v_width, v_height * 2)
+        };
+
         // Only re-rasterize the 3D scene when something changed (or the viewport
         // was resized); an unchanged framebuffer is painted straight from cache,
         // so the event loop stays responsive while idle.
         if self.needs_rerender
-            || self.framebuffer.width != v_width
-            || self.framebuffer.height != v_height * 2
+            || self.framebuffer.width != expected_size.0
+            || self.framebuffer.height != expected_size.1
         {
             self.render_scene(v_width, v_height);
             self.needs_rerender = false;
         }
-        frame.render_widget(ViewportWidget::new(&self.framebuffer), chunks[1]);
+        frame.render_widget(
+            ViewportWidget::new(&self.framebuffer).with_backend(self.graphics_backend),
+            chunks[1],
+        );
+        if self.graphics_backend.is_kitty()
+            && self.viewport_area.width > 0
+            && self.viewport_area.height > 0
+        {
+            self.emit_kitty_frame();
+        }
 
         // Footer or pick prompt
         if let Some(query) = &self.pick_prompt {

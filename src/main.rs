@@ -255,6 +255,12 @@ fn main() {
         ssao_radius: 2,
     };
 
+    let graphics_backend = if cli.kitty {
+        termpdb::render::GraphicsBackend::Kitty
+    } else {
+        termpdb::render::GraphicsBackend::HalfBlock
+    };
+
     if let Err(err) = tui::run(
         structure,
         cli.mode,
@@ -266,6 +272,7 @@ fn main() {
         postprocess,
         cli.interactions,
         cli.dof,
+        graphics_backend,
     ) {
         eprintln!("Error running termpdb: {}", err);
         std::process::exit(1);

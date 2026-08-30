@@ -46,8 +46,8 @@ fn test_export_kitty_frame_with_atoms() {
             visibility: Visibility::default(),
             lod: LodMode::Auto,
         };
-        let output =
-            export_kitty_frame(&structure, &config, 40, 20).expect("kitty export with atoms failed");
+        let output = export_kitty_frame(&structure, &config, 40, 20)
+            .expect("kitty export with atoms failed");
         assert!(output.starts_with("\x1b_G"));
         assert!(output.contains("a=T"));
         assert!(output.contains("f=32"));

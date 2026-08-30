@@ -53,6 +53,8 @@ pub enum AppAction {
     ToggleOutline,
     /// Toggle screen-space ambient occlusion (SSAO)
     ToggleSsao,
+    /// Toggle high-resolution Kitty graphics protocol / half-block mode
+    ToggleGraphicsBackend,
     /// Toggle non-covalent interactions (H-bonds and disulfide bridges)
     ToggleInteractions,
     /// Toggle Depth-of-Field (DoF) focal plane cueing
@@ -125,7 +127,10 @@ pub fn handle_key_event(key: KeyEvent) -> AppAction {
         KeyCode::Char('p') => AppAction::PrevModel,
         KeyCode::Char('o') => AppAction::ToggleWaters,
         KeyCode::Char('O') => AppAction::ToggleOutline,
-        KeyCode::Char('k') | KeyCode::Char('K') => AppAction::ToggleSsao,
+        KeyCode::Char('k') => AppAction::ToggleSsao,
+        KeyCode::Char('K') | KeyCode::Char('g') | KeyCode::Char('G') => {
+            AppAction::ToggleGraphicsBackend
+        }
         KeyCode::Char('e') | KeyCode::Char('E') => AppAction::ToggleInteractions,
         KeyCode::Char('f') | KeyCode::Char('F') => AppAction::ToggleDof,
         KeyCode::Char('u') => AppAction::ToggleHydrogens,

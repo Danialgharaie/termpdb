@@ -88,9 +88,8 @@ pub fn export_kitty_frame(
 
     let fb = render_structure_to_framebuffer(structure, config, pixel_w as usize, pixel_h as usize);
     let rgba = fb.to_rgba_bytes();
-    let seq = crate::render::encode_kitty_graphics_rgba(
-        pixel_w, pixel_h, cols, rows, 0, 0, 0, 1, &rgba,
-    );
+    let seq =
+        crate::render::encode_kitty_graphics_rgba(pixel_w, pixel_h, cols, rows, 0, 0, 0, 1, &rgba);
     Ok(seq)
 }
 

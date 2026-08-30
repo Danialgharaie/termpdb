@@ -20,8 +20,8 @@ pub use buffer::{Framebuffer, FramebufferBand, PixelColor};
 pub use camera::Camera;
 pub use color::{ColorScheme, color_for_atom};
 pub use export::{
-    ExportConfig, downsample_rgba, export_kitty_frame, export_mp4,
-    render_structure_to_framebuffer, render_supersampled, render_svg, write_png,
+    ExportConfig, downsample_rgba, export_kitty_frame, export_mp4, render_structure_to_framebuffer,
+    render_supersampled, render_svg, write_png,
 };
 pub use kitty::{
     DEFAULT_CELL_PIXEL_HEIGHT, DEFAULT_CELL_PIXEL_WIDTH, GraphicsBackend, encode_kitty_delete,

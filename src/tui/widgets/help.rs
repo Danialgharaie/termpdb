@@ -101,6 +101,15 @@ impl Widget for HelpWidget {
             ]),
             Line::from(vec![
                 Span::styled(
+                    "    K / g        ",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("    Toggle Kitty Graphics / Half-Block Mode"),
+            ]),
+            Line::from(vec![
+                Span::styled(
                     "    O            ",
                     Style::default()
                         .fg(Color::White)

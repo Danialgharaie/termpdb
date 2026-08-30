@@ -33,6 +33,10 @@ struct TerminalCleanupGuard;
 
 impl Drop for TerminalCleanupGuard {
     fn drop(&mut self) {
+        use std::io::Write;
+        let delete_seq = crate::render::encode_kitty_delete(None);
+        let _ = stdout().write_all(delete_seq.as_bytes());
+        let _ = stdout().flush();
         let _ = disable_raw_mode();
         let _ = execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture, Show);
     }
@@ -50,10 +54,15 @@ pub fn run(
     postprocess: crate::render::PostProcessConfig,
     show_interactions: bool,
     dof: Option<f32>,
+    graphics_backend: crate::render::GraphicsBackend,
 ) -> Result<()> {
     // Set panic hook to ensure terminal is cleaned up even if a panic occurs
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
+        use std::io::Write;
+        let delete_seq = crate::render::encode_kitty_delete(None);
+        let _ = stdout().write_all(delete_seq.as_bytes());
+        let _ = stdout().flush();
         let _ = disable_raw_mode();
         let _ = execute!(stdout(), LeaveAlternateScreen, DisableMouseCapture, Show);
         original_hook(panic_info);
@@ -74,7 +83,8 @@ pub fn run(
         .with_lod(lod)
         .with_postprocess(postprocess)
         .with_interactions(show_interactions)
-        .with_dof(dof);
+        .with_dof(dof)
+        .with_graphics_backend(graphics_backend);
     let mut last_frame_time = Instant::now();
     let frame_target = Duration::from_micros(16_667); // ~60 FPS
 
