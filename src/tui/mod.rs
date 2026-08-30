@@ -111,6 +111,9 @@ pub fn run(
         // near 0 instead of constantly diffing an unchanged buffer.
         if app.needs_redraw {
             terminal.draw(|f| app.render_ui(f))?;
+            if app.graphics_backend.is_kitty() {
+                app.emit_kitty_frame();
+            }
             app.needs_redraw = false;
         }
 

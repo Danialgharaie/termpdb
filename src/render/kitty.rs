@@ -59,10 +59,16 @@ pub fn encode_kitty_graphics_rgba(
     rgba: &[u8],
 ) -> String {
     use base64::Engine;
+    if rgba.is_empty() {
+        return String::new();
+    }
     let b64 = base64::engine::general_purpose::STANDARD.encode(rgba);
     let bytes = b64.as_bytes();
     let total_len = bytes.len();
     let mut out = String::with_capacity(total_len + 256);
+
+    // Position cursor at target cell (1-indexed row and col)
+    let _ = write!(out, "\x1b[{};{}H", y + 1, x + 1);
 
     let mut offset = 0;
     let mut first = true;
@@ -76,7 +82,7 @@ pub fn encode_kitty_graphics_rgba(
         if first {
             let _ = write!(
                 out,
-                "\x1b_Ga=T,f=32,s={width},v={height},c={cols},r={rows},X={x},Y={y},z={z_index},i={image_id},q=2,m={m};{chunk_str}\x1b\\"
+                "\x1b_Ga=T,f=32,s={width},v={height},c={cols},r={rows},z={z_index},i={image_id},q=2,m={m};{chunk_str}\x1b\\"
             );
             first = false;
         } else {

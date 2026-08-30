@@ -286,7 +286,11 @@ impl App {
 
     /// Emits the in-band Kitty graphics escape sequence for the current framebuffer placed over viewport_area.
     pub fn emit_kitty_frame(&self) {
-        if self.viewport_area.width == 0 || self.viewport_area.height == 0 {
+        if self.viewport_area.width == 0
+            || self.viewport_area.height == 0
+            || self.show_help
+            || self.show_info
+        {
             return;
         }
         let rgba = self.framebuffer.to_rgba_bytes();
@@ -297,13 +301,14 @@ impl App {
             self.viewport_area.height,
             self.viewport_area.x,
             self.viewport_area.y,
-            -1,
+            0,
             1,
             &rgba,
         );
         use std::io::Write;
-        let _ = std::io::stdout().write_all(seq.as_bytes());
-        let _ = std::io::stdout().flush();
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(seq.as_bytes());
+        let _ = out.flush();
     }
 
     /// Dispatches an `AppAction` to update app state or camera.
@@ -831,12 +836,6 @@ impl App {
             ViewportWidget::new(&self.framebuffer).with_backend(self.graphics_backend),
             chunks[1],
         );
-        if self.graphics_backend.is_kitty()
-            && self.viewport_area.width > 0
-            && self.viewport_area.height > 0
-        {
-            self.emit_kitty_frame();
-        }
 
         // Footer or pick prompt
         if let Some(query) = &self.pick_prompt {

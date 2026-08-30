@@ -8,12 +8,11 @@ fn test_encode_kitty_graphics_single_chunk() {
     let rgba = vec![255, 0, 0, 255, 0, 255, 0, 255]; // 2 pixels
     let seq = encode_kitty_graphics_rgba(2, 1, 10, 5, 0, 1, -1, 1, &rgba);
 
-    assert!(seq.starts_with("\x1b_G"));
+    assert!(seq.starts_with("\x1b[2;1H\x1b_G"));
     assert!(seq.contains("a=T"));
     assert!(seq.contains("f=32"));
     assert!(seq.contains("s=2,v=1"));
     assert!(seq.contains("c=10,r=5"));
-    assert!(seq.contains("X=0,Y=1"));
     assert!(seq.contains("z=-1"));
     assert!(seq.contains("i=1"));
     assert!(seq.contains("q=2"));
@@ -27,7 +26,7 @@ fn test_encode_kitty_graphics_multi_chunk() {
     let rgba = vec![128u8; 4000 * 4];
     let seq = encode_kitty_graphics_rgba(200, 20, 80, 24, 5, 10, -1, 42, &rgba);
 
-    assert!(seq.starts_with("\x1b_Ga=T,f=32,s=200,v=20,c=80,r=24,X=5,Y=10,z=-1,i=42,q=2,m=1;"));
+    assert!(seq.starts_with("\x1b[11;6H\x1b_Ga=T,f=32,s=200,v=20,c=80,r=24,z=-1,i=42,q=2,m=1;"));
     assert!(seq.contains("\x1b\\"));
     // Intermediate and ending chunk escape sequences
     assert!(seq.contains("\x1b_Gm=1;"));

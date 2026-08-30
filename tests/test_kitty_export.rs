@@ -13,7 +13,7 @@ fn test_export_kitty_frame_generates_valid_sequence() {
     let config = ExportConfig::default();
     let output = export_kitty_frame(&structure, &config, 80, 40).expect("kitty export failed");
 
-    assert!(output.starts_with("\x1b_G"));
+    assert!(output.starts_with("\x1b[1;1H\x1b_G"));
     assert!(output.contains("a=T"));
     assert!(output.contains("f=32"));
     assert!(output.ends_with("\x1b\\"));
@@ -48,7 +48,7 @@ fn test_export_kitty_frame_with_atoms() {
         };
         let output = export_kitty_frame(&structure, &config, 40, 20)
             .expect("kitty export with atoms failed");
-        assert!(output.starts_with("\x1b_G"));
+        assert!(output.starts_with("\x1b[1;1H\x1b_G"));
         assert!(output.contains("a=T"));
         assert!(output.contains("f=32"));
         assert!(output.ends_with("\x1b\\"));
