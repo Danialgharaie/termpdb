@@ -9,6 +9,7 @@ pub mod buffer;
 pub mod camera;
 pub mod color;
 pub mod export;
+pub mod kitty;
 pub mod lighting;
 pub mod postprocess;
 pub mod rasterizer;
@@ -19,6 +20,10 @@ pub use buffer::{Framebuffer, FramebufferBand, PixelColor};
 pub use camera::Camera;
 pub use color::{ColorScheme, color_for_atom};
 pub use export::{downsample_rgba, export_mp4, render_supersampled, render_svg, write_png};
+pub use kitty::{
+    DEFAULT_CELL_PIXEL_HEIGHT, DEFAULT_CELL_PIXEL_WIDTH, GraphicsBackend, encode_kitty_delete,
+    encode_kitty_graphics_rgba, get_terminal_cell_size,
+};
 pub use lighting::Lighting;
 pub use postprocess::{PostProcessConfig, apply_postprocessing};
 pub use rasterizer::{
