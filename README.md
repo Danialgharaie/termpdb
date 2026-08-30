@@ -34,8 +34,9 @@ focal cueing — all computed on the CPU per frame.
 - Non-covalent interaction display: hydrogen bonds & disulfide bridges
 - Distance / bond-angle / dihedral measurements with Ramachandran regions
 
-**Headless export** — ANSI text frames, supersampled PNG, vector SVG, and
-turntable MP4 video (via `ffmpeg`), all scriptable for pipelines.
+**Headless export** — ANSI text frames, Kitty Graphics escape sequences,
+supersampled PNG, vector SVG, and turntable MP4 video (via `ffmpeg`), all scriptable
+for pipelines.
 
 ## Build
 
@@ -69,6 +70,7 @@ Common options:
 | `-m, --mode <MODE>` | `trace` · `ball-and-stick` · `ribbon` · `vdw` · `wireframe` |
 | `-c, --color <SCHEME>` | `cpk` · `rainbow` · `chain` · `ss` · `bfactor` · `plddt` · `hydrophobicity` · `charge` · `catppuccin` · `nord` · `tokyo-night` · `gruvbox` |
 | `-s, --spin` / `--spin-speed <F>` | turntable auto-spin |
+| `--kitty` | render using high-resolution Kitty Graphics Protocol |
 | `--model <N>` | show model N of a multi-model file |
 | `--assembly <ID>` | render biological assembly ID (`asu` for the asymmetric unit) |
 | `--interactions` | draw H-bonds and disulfide bridges |
@@ -78,6 +80,7 @@ Common options:
 | `--align FILE...` | Kabsch-superimpose extra structures, report RMSD |
 | `--dssp` | force DSSP recalculation |
 | `--export-ansi -` | write an ANSI frame to stdout and exit |
+| `--export-kitty out.kitty` | write Kitty graphics escape sequence to file or stdout (`-`) and exit |
 | `--export-png out.png --width 1920 --height 1080 --ssaa 3` | supersampled image |
 | `--export-svg out.svg` | vector output |
 | `--export-mp4 out.mp4 --frames 90 --fps 30` | spinning turntable video |
@@ -92,6 +95,7 @@ Atom selectors are `CHAIN:RESSEQ[:ATOM]` — e.g.
 |---|---|
 | `1`–`5` / `m`·`M` | representation mode / cycle modes |
 | `c`·`C` | cycle color schemes |
+| `K` / `g` | toggle Kitty graphics protocol / half-block mode |
 | left-drag / arrows | orbit camera |
 | right-drag / WASD | pan |
 | scroll / `[` `]` | zoom |

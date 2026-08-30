@@ -72,6 +72,15 @@ A living backlog of technical capabilities, improvements, and architectural mile
 - **Approach:**
   - Add focal plane parameter $Z_{\text{focus}}$ and focal depth range to camera and lighting pipeline.
 
+### 1.9 High-Resolution Kitty Graphics Protocol Support
+- **Status:** `[Done]` | **Priority:** High
+- **Description:** Render high-resolution true-pixel molecular graphics directly in supported terminal emulators (Kitty, WezTerm, Ghostty, Alacritty with graphics protocol) using in-band 32-bit RGBA escape sequences (`\x1b_G...`).
+- **Approach:**
+  - Query terminal character cell pixel geometry dynamically via `crossterm::terminal::window_size()`.
+  - Software-rasterize full-resolution framebuffers with SSAO, Blinn-Phong lighting, and depth outlining.
+  - Chunked Base64 RGBA escape sequence generation ([`src/render/kitty.rs`](src/render/kitty.rs)) with quiet mode (`q=2`) and negative z-index (`z=-1`) for seamless TUI text overlay integration.
+  - Interactive runtime backend toggle via `K` keybinding, CLI flag `--kitty`, calibrated mouse picking, and headless export via `--export-kitty`.
+
 ---
 
 ## 2. Performance & Optimization
