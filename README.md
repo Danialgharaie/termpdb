@@ -13,7 +13,7 @@ termpdb structure.cif.gz --mode ribbon --color plddt
 termpdb 4egk.pdb -m vdw -s --spin-speed 1.5
 ```
 
-## Demo (PDB 4EGK: Human Topoisomerase I - DNA Complex)
+## Demo (PDB 4EGK: Human Hsp90-alpha ATPase Domain bound to Radicicol)
 
 | Cartoon Ribbon (pLDDT Confidence) | Ball & Stick (CPK Elements) |
 |:---:|:---:|
