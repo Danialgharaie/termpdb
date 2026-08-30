@@ -217,6 +217,25 @@ impl Framebuffer {
             })
             .collect()
     }
+
+    /// Copies the framebuffer pixel colors into a flat 32-bit RGBA byte vector.
+    pub fn to_rgba_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.width * self.height * 4);
+        self.write_rgba_bytes(&mut bytes);
+        bytes
+    }
+
+    /// Appends the framebuffer pixel colors as 32-bit RGBA (4 bytes per pixel, A=255) into the provided buffer.
+    pub fn write_rgba_bytes(&self, out: &mut Vec<u8>) {
+        out.clear();
+        out.reserve(self.width * self.height * 4);
+        for pixel in &self.pixels {
+            out.push(pixel.0);
+            out.push(pixel.1);
+            out.push(pixel.2);
+            out.push(255);
+        }
+    }
 }
 
 /// A horizontal slice/band of a Framebuffer for parallel multi-threaded rendering.
