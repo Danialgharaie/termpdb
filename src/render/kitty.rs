@@ -45,7 +45,9 @@ pub fn get_terminal_cell_size_scaled(scale_factor: f32) -> (u32, u32) {
     }
     (
         ((DEFAULT_CELL_PIXEL_WIDTH as f32) * scale).round().max(2.0) as u32,
-        ((DEFAULT_CELL_PIXEL_HEIGHT as f32) * scale).round().max(4.0) as u32,
+        ((DEFAULT_CELL_PIXEL_HEIGHT as f32) * scale)
+            .round()
+            .max(4.0) as u32,
     )
 }
 
