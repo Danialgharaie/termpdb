@@ -648,3 +648,58 @@ pub fn export_mp4(
     }
     Ok(())
 }
+
+/// Exports a 360-degree rotating turntable animation directly as an animated GIF in pure Rust.
+#[allow(clippy::too_many_arguments)]
+pub fn export_gif(
+    structure: &Structure,
+    mode: RenderMode,
+    color: ColorScheme,
+    width: usize,
+    height: usize,
+    ssaa: usize,
+    frames: u32,
+    fps: u32,
+    visibility: Visibility,
+    lod: LodMode,
+    out_path: &str,
+) -> Result<()> {
+    use image::codecs::gif::{GifEncoder, Repeat};
+    use image::{Frame, RgbaImage};
+
+    let (width, height, ssaa) = fit_render_size(width, height, ssaa);
+    let ssaa = ssaa.max(1);
+    let sw = width * ssaa;
+    let sh = height * ssaa;
+    let lighting = Lighting::default();
+    let mut camera = fit_camera(structure, sw, sh);
+    let delta = 2.0 * std::f32::consts::TAU / frames.max(1) as f32;
+
+    let delay_num = 1000 / fps.max(1);
+    let delay = image::Delay::from_numer_denom_ms(delay_num, 1);
+
+    let file = File::create(out_path)?;
+    let buf_writer = BufWriter::new(file);
+    let mut encoder = GifEncoder::new_with_speed(buf_writer, 10);
+    encoder
+        .set_repeat(Repeat::Infinite)
+        .map_err(|e| TermPdbError::RenderError(format!("gif repeat: {e}")))?;
+
+    for _ in 0..frames {
+        let mut fb = Framebuffer::new(sw, sh);
+        fb.clear((0, 0, 0));
+        render_structure(
+            structure, mode, color, &camera, &mut fb, &lighting, visibility, lod,
+        );
+        let rgba = downsample_rgba(&fb, width, height, ssaa);
+        let img = RgbaImage::from_raw(width as u32, height as u32, rgba)
+            .ok_or_else(|| TermPdbError::RenderError("failed to create image buffer".into()))?;
+        let frame = Frame::from_parts(img, 0, 0, delay);
+        encoder
+            .encode_frame(frame)
+            .map_err(|e| TermPdbError::RenderError(format!("gif encode frame: {e}")))?;
+        camera.orbit_angle(delta);
+    }
+
+    Ok(())
+}

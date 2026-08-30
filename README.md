@@ -13,6 +13,14 @@ termpdb structure.cif.gz --mode ribbon --color plddt
 termpdb 4egk.pdb -m vdw -s --spin-speed 1.5
 ```
 
+## Demo (PDB 4EGK: Human Topoisomerase I - DNA Complex)
+
+| Cartoon Ribbon (pLDDT Confidence) | Ball & Stick (CPK Elements) |
+|:---:|:---:|
+| ![4EGK Ribbon pLDDT](assets/4egk_ribbon_plddt.gif) | ![4EGK Ball & Stick CPK](assets/4egk_ball_stick_cpk.gif) |
+| **Space-Filling VDW (Hydrophobicity)** | **Cartoon Ribbon (N→C Rainbow)** |
+| ![4EGK VDW Hydrophobicity](assets/4egk_vdw_hydrophobicity.gif) | ![4EGK Ribbon Rainbow](assets/4egk_ribbon_rainbow.gif) |
+
 ## Features
 
 **Representations** — backbone/CA trace, ball & stick, cartoon ribbon
@@ -35,7 +43,7 @@ focal cueing — all computed on the CPU per frame.
 - Distance / bond-angle / dihedral measurements with Ramachandran regions
 
 **Headless export** — ANSI text frames, Kitty Graphics escape sequences,
-supersampled PNG, vector SVG, and turntable MP4 video (via `ffmpeg`), all scriptable
+supersampled PNG, vector SVG, standalone animated GIF (pure Rust), and turntable MP4 video, all scriptable
 for pipelines.
 
 ## Build
@@ -83,7 +91,8 @@ Common options:
 | `--export-kitty out.kitty` | write Kitty graphics escape sequence to file or stdout (`-`) and exit |
 | `--export-png out.png --width 1920 --height 1080 --ssaa 3` | supersampled image |
 | `--export-svg out.svg` | vector output |
-| `--export-mp4 out.mp4 --frames 90 --fps 30` | spinning turntable video |
+| `--export-gif out.gif --frames 60 --fps 30` | animated 3D turntable GIF (pure Rust, no ffmpeg) |
+| `--export-mp4 out.mp4 --frames 90 --fps 30` | spinning turntable video (requires ffmpeg) |
 | `--lod auto\|full\|backbone\|ca` | level-of-detail for huge complexes |
 
 Atom selectors are `CHAIN:RESSEQ[:ATOM]` — e.g.

@@ -115,6 +115,10 @@ pub struct Cli {
     #[arg(long = "export-svg", value_name = "PATH")]
     pub export_svg: Option<String>,
 
+    /// Export a turntable-spin animated GIF to PATH in pure Rust (no ffmpeg needed). Use with --frames/--fps/--width/--height.
+    #[arg(long = "export-gif", value_name = "PATH")]
+    pub export_gif: Option<String>,
+
     /// Export a turntable-spin MP4 to PATH (requires ffmpeg). Use --frames/--fps.
     #[arg(long = "export-mp4", value_name = "PATH")]
     pub export_mp4: Option<String>,

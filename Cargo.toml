@@ -17,6 +17,7 @@ thiserror = "2.0"
 png = "0.17"
 rayon = "1.10"
 base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["gif"] }
 
 # --- Build profiles ---
 

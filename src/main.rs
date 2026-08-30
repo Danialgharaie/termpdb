@@ -228,6 +228,26 @@ fn main() {
         return;
     }
 
+    if let Some(gif_path) = &cli.export_gif {
+        if let Err(e) = termpdb::render::export_gif(
+            &structure,
+            cli.mode,
+            cli.color,
+            cli.width as usize,
+            cli.height as usize,
+            cli.ssaa as usize,
+            cli.frames,
+            cli.fps,
+            visibility,
+            cli.lod,
+            gif_path,
+        ) {
+            eprintln!("Error exporting animated GIF to '{}': {}", gif_path, e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
     if let Some(mp4_path) = &cli.export_mp4 {
         if let Err(e) = termpdb::render::export_mp4(
             &structure,
