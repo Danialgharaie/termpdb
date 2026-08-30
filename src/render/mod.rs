@@ -25,7 +25,8 @@ pub use export::{
 };
 pub use kitty::{
     DEFAULT_CELL_PIXEL_HEIGHT, DEFAULT_CELL_PIXEL_WIDTH, GraphicsBackend, encode_kitty_delete,
-    encode_kitty_graphics_rgba, get_terminal_cell_size,
+    encode_kitty_graphics_png, encode_kitty_graphics_rgba, get_terminal_cell_size,
+    get_terminal_cell_size_scaled,
 };
 pub use lighting::Lighting;
 pub use postprocess::{PostProcessConfig, apply_postprocessing};

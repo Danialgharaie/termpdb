@@ -273,6 +273,7 @@ fn main() {
         cli.interactions,
         cli.dof,
         graphics_backend,
+        cli.scale,
     ) {
         eprintln!("Error running termpdb: {}", err);
         std::process::exit(1);

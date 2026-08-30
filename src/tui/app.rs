@@ -33,8 +33,10 @@ pub struct App {
     pub render_mode: RenderMode,
     /// Active color scheme
     pub color_scheme: ColorScheme,
-    /// Active graphics rendering backend (HalfBlock vs Kitty)
+    /// Active graphics backend
     pub graphics_backend: GraphicsBackend,
+    /// Resolution scale multiplier for Kitty graphics mode
+    pub scale: f32,
     /// Whether automatic turntable spin is active
     pub auto_spin: bool,
     /// Spin rotation speed factor
@@ -146,6 +148,7 @@ impl App {
             render_mode: initial_mode,
             color_scheme: initial_color,
             graphics_backend: GraphicsBackend::HalfBlock,
+            scale: 1.0,
             auto_spin,
             spin_speed: 1.0,
             show_help: false,
@@ -236,6 +239,12 @@ impl App {
         self
     }
 
+    /// Sets the Kitty graphics resolution scale factor.
+    pub fn with_scale(mut self, scale: f32) -> Self {
+        self.scale = scale;
+        self
+    }
+
     /// Sets the spin speed factor.
     pub fn set_spin_speed(&mut self, speed: f32) {
         self.spin_speed = speed;
@@ -274,7 +283,7 @@ impl App {
     /// Resizes the framebuffer to match the specified terminal column and row dimensions.
     pub fn resize_framebuffer(&mut self, width: u16, height: u16) {
         if self.graphics_backend.is_kitty() {
-            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size_scaled(self.scale);
             let pixel_w = (width as u32 * cell_w).max(1) as usize;
             let pixel_h = (height as u32 * cell_h).max(1) as usize;
             self.framebuffer.resize(pixel_w, pixel_h);
@@ -294,7 +303,7 @@ impl App {
             return;
         }
         let rgba = self.framebuffer.to_rgba_bytes();
-        let seq = crate::render::encode_kitty_graphics_rgba(
+        let seq = crate::render::encode_kitty_graphics_png(
             self.framebuffer.width as u32,
             self.framebuffer.height as u32,
             self.viewport_area.width,
@@ -587,7 +596,7 @@ impl App {
             return;
         }
         let (sx, sy) = if self.graphics_backend.is_kitty() {
-            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size_scaled(self.scale);
             let px = (col.saturating_sub(area.x) as u32 * cell_w + cell_w / 2) as f32;
             let py = (row.saturating_sub(area.y) as u32 * cell_h + cell_h / 2) as f32;
             (px, py)
@@ -597,7 +606,7 @@ impl App {
             (sx, sy)
         };
         let pick_radius = if self.graphics_backend.is_kitty() {
-            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size_scaled(self.scale);
             (cell_w.max(cell_h) as f32) * 1.5
         } else {
             6.0
@@ -647,7 +656,7 @@ impl App {
     /// Re-renders the 3D scene into the software framebuffer matching viewport dimensions.
     pub fn render_scene(&mut self, width: usize, height: usize) {
         let (pixel_width, pixel_height) = if self.graphics_backend.is_kitty() {
-            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size_scaled(self.scale);
             (
                 (width as u32 * cell_w).max(1) as usize,
                 (height as u32 * cell_h).max(1) as usize,
@@ -813,7 +822,7 @@ impl App {
         let v_width = chunks[1].width as usize;
         let v_height = chunks[1].height as usize;
         let expected_size = if self.graphics_backend.is_kitty() {
-            let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+            let (cell_w, cell_h) = crate::render::get_terminal_cell_size_scaled(self.scale);
             (
                 (v_width as u32 * cell_w).max(1) as usize,
                 (v_height as u32 * cell_h).max(1) as usize,

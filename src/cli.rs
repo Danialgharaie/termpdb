@@ -23,6 +23,10 @@ pub struct Cli {
     #[arg(long, default_value_t = false)]
     pub kitty: bool,
 
+    /// Resolution scale multiplier for Kitty graphics rendering (e.g. 1.0, 1.5, 2.0)
+    #[arg(long = "scale", default_value_t = 1.0)]
+    pub scale: f32,
+
     /// Export rendered frame as Kitty Graphics Protocol escape sequence to file or stdout (-)
     #[arg(long = "export-kitty", value_name = "PATH")]
     pub export_kitty: Option<PathBuf>,

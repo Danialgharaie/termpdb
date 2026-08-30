@@ -62,6 +62,6 @@ fn test_get_terminal_cell_size() {
     assert!(w >= 1);
     assert!(h >= 1);
     // In headless test environments, it should fallback to defaults
-    assert_eq!(DEFAULT_CELL_PIXEL_WIDTH, 10);
-    assert_eq!(DEFAULT_CELL_PIXEL_HEIGHT, 20);
+    assert_eq!(DEFAULT_CELL_PIXEL_WIDTH, 16);
+    assert_eq!(DEFAULT_CELL_PIXEL_HEIGHT, 32);
 }

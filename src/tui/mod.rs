@@ -55,6 +55,7 @@ pub fn run(
     show_interactions: bool,
     dof: Option<f32>,
     graphics_backend: crate::render::GraphicsBackend,
+    scale: f32,
 ) -> Result<()> {
     // Set panic hook to ensure terminal is cleaned up even if a panic occurs
     let original_hook = panic::take_hook();
@@ -84,7 +85,8 @@ pub fn run(
         .with_postprocess(postprocess)
         .with_interactions(show_interactions)
         .with_dof(dof)
-        .with_graphics_backend(graphics_backend);
+        .with_graphics_backend(graphics_backend)
+        .with_scale(scale);
     let mut last_frame_time = Instant::now();
     let frame_target = Duration::from_micros(16_667); // ~60 FPS
 
