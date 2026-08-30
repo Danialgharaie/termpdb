@@ -57,10 +57,8 @@ cargo build --release
 
 [rustup]: https://rustup.rs
 
-> **Note:** `.cargo/config.toml` builds with `-C target-cpu=native` to let LLVM
-> auto-vectorize the hot rasterizer loops. The resulting binary is tuned for
-> the build machine and may fail with `SIGILL` on older CPUs. For portable
-> binaries, build with `RUSTFLAGS=""` or delete that file.
+> **Tip:** For local maximum performance on your own machine, you can build with
+> `RUSTFLAGS="-C target-cpu=native" cargo build --release` to enable host AVX2/AVX-512 vectorization.
 
 ## Usage
 
