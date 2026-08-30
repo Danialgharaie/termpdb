@@ -1,5 +1,7 @@
 //! Command-line argument parsing for TermPDB.
 
+use std::path::PathBuf;
+
 use crate::render::{ColorScheme, LodMode, RenderMode};
 use clap::Parser;
 
@@ -16,6 +18,14 @@ pub struct Cli {
     /// Path to .pdb / .cif / .gz file(s) or 4-letter RCSB PDB ID (e.g. 1crn, 1ubq)
     #[arg(value_name = "FILES")]
     pub files: Vec<String>,
+
+    /// Enable high-resolution Kitty Graphics Protocol rendering
+    #[arg(long, default_value_t = false)]
+    pub kitty: bool,
+
+    /// Export rendered frame as Kitty Graphics Protocol escape sequence to file or stdout (-)
+    #[arg(long = "export-kitty", value_name = "PATH")]
+    pub export_kitty: Option<PathBuf>,
 
     /// Superimpose input structures using Kabsch RMSD alignment
     #[arg(long = "align", default_value_t = false)]

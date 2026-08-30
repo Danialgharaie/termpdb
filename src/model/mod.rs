@@ -82,6 +82,12 @@ pub struct Structure {
     pub metadata: HashMap<String, String>,
 }
 
+impl Default for Structure {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
+
 impl Structure {
     /// Creates a new empty `Structure` with the given title and a single model (serial 1).
     pub fn new(title: impl Into<String>) -> Self {

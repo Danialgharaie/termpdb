@@ -94,7 +94,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        if cli.export_ansi.is_none() {
+        if cli.export_ansi.is_none()
+            && cli.export_kitty.is_none()
+            && cli.export_png.is_none()
+            && cli.export_svg.is_none()
+            && cli.export_mp4.is_none()
+        {
             return;
         }
     }
@@ -107,7 +112,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        if cli.export_ansi.is_none() {
+        if cli.export_ansi.is_none()
+            && cli.export_kitty.is_none()
+            && cli.export_png.is_none()
+            && cli.export_svg.is_none()
+            && cli.export_mp4.is_none()
+        {
             return;
         }
     }
@@ -120,7 +130,12 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        if cli.export_ansi.is_none() {
+        if cli.export_ansi.is_none()
+            && cli.export_kitty.is_none()
+            && cli.export_png.is_none()
+            && cli.export_svg.is_none()
+            && cli.export_mp4.is_none()
+        {
             return;
         }
     }
@@ -138,6 +153,40 @@ fn main() {
         } else if let Err(e) = std::fs::write(export_path, ansi) {
             eprintln!("Error writing ANSI output to '{}': {}", export_path, e);
             std::process::exit(1);
+        }
+        return;
+    }
+
+    if let Some(path) = &cli.export_kitty {
+        let export_config = termpdb::render::ExportConfig {
+            mode: cli.mode,
+            color: cli.color,
+            visibility,
+            lod: cli.lod,
+        };
+        let (cols, rows) = crossterm::terminal::size().unwrap_or((cli.width, cli.height));
+        let (cols, rows) = if cli.width != 80 || cli.height != 40 {
+            (cli.width, cli.height)
+        } else {
+            (cols, rows)
+        };
+        match termpdb::render::export_kitty_frame(&structure, &export_config, cols, rows) {
+            Ok(kitty_str) => {
+                if path.as_os_str() == "-" {
+                    let mut stdout = std::io::stdout().lock();
+                    if let Err(e) = stdout.write_all(kitty_str.as_bytes()) {
+                        eprintln!("Error writing Kitty output to stdout: {}", e);
+                        std::process::exit(1);
+                    }
+                } else if let Err(e) = std::fs::write(path, kitty_str) {
+                    eprintln!("Error exporting Kitty image to '{}': {}", path.display(), e);
+                    std::process::exit(1);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error exporting Kitty image: {}", e);
+                std::process::exit(1);
+            }
         }
         return;
     }

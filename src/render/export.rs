@@ -13,11 +13,32 @@ use crate::render::camera::{Camera, CameraMatrices};
 use crate::render::color::ColorScheme;
 use crate::render::fit_render_size;
 use crate::render::lighting::Lighting;
+use crate::render::postprocess::{PostProcessConfig, apply_postprocessing};
 use crate::render::representations::trace::{MAX_TRACE_BOND_DISTANCE, find_trace_guide_atom};
 use crate::render::representations::{
     LodMode, RenderMode, RibbonPrimitive, Visibility, build_render_cache, build_ribbon_geometry,
     project_radius, render_structure,
 };
+
+/// Configuration for headless structure rendering and export.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExportConfig {
+    pub mode: RenderMode,
+    pub color: ColorScheme,
+    pub visibility: Visibility,
+    pub lod: LodMode,
+}
+
+impl Default for ExportConfig {
+    fn default() -> Self {
+        Self {
+            mode: RenderMode::Ribbon,
+            color: ColorScheme::Rainbow,
+            visibility: Visibility::default(),
+            lod: LodMode::Auto,
+        }
+    }
+}
 
 fn fit_camera(structure: &Structure, sw: usize, sh: usize) -> Camera {
     let mut camera = Camera::new();
@@ -26,6 +47,51 @@ fn fit_camera(structure: &Structure, sw: usize, sh: usize) -> Camera {
     let radius = structure.bounding_sphere_radius();
     camera.fit_structure(com, radius);
     camera
+}
+
+/// Renders a molecular structure to a framebuffer for headless export.
+pub fn render_structure_to_framebuffer(
+    structure: &Structure,
+    config: &ExportConfig,
+    width: usize,
+    height: usize,
+) -> Framebuffer {
+    let (width, height, _) = fit_render_size(width, height, 1);
+    let mut fb = Framebuffer::new(width, height);
+    let camera = fit_camera(structure, width, height);
+    let lighting = Lighting::default();
+    fb.clear((0, 0, 0));
+    render_structure(
+        structure,
+        config.mode,
+        config.color,
+        &camera,
+        &mut fb,
+        &lighting,
+        config.visibility,
+        config.lod,
+    );
+    apply_postprocessing(&mut fb, &PostProcessConfig::default());
+    fb
+}
+
+/// Exports a rendered structure directly as a Kitty Graphics Protocol escape sequence string.
+pub fn export_kitty_frame(
+    structure: &Structure,
+    config: &ExportConfig,
+    cols: u16,
+    rows: u16,
+) -> Result<String> {
+    let (cell_w, cell_h) = crate::render::get_terminal_cell_size();
+    let pixel_w = (cols as u32 * cell_w).max(1);
+    let pixel_h = (rows as u32 * cell_h).max(1);
+
+    let fb = render_structure_to_framebuffer(structure, config, pixel_w as usize, pixel_h as usize);
+    let rgba = fb.to_rgba_bytes();
+    let seq = crate::render::encode_kitty_graphics_rgba(
+        pixel_w, pixel_h, cols, rows, 0, 0, 0, 1, &rgba,
+    );
+    Ok(seq)
 }
 
 #[allow(clippy::too_many_arguments)]
